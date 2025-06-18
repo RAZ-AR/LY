@@ -3294,7 +3294,7 @@ struct PassBuilderView: View {
                     
                     // Create Button
                     Button {
-                        createWalletPass()
+                        createPass()
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: isCreatingPass ? "hourglass" : (isFormValid ? "wallet.pass.fill" : "exclamationmark.triangle.fill"))
@@ -5152,7 +5152,7 @@ struct FullSizePassPreview: View {
                                     Text("Серийный номер")
                                         .font(.caption2)
                                         .foregroundColor(.white.opacity(0.7))
-                                    Text(generateSerialNumber())
+                                    Text("LY\(String(format: "%06d", Int.random(in: 100000...999999)))")
                                         .font(.caption.bold())
                                         .foregroundColor(.white)
                                 }
@@ -5256,67 +5256,6 @@ struct FullSizePassPreview: View {
         case "email": return "envelope.fill"
         default: return "text.alignleft"
         }
-    }
-    
-    private func generateSerialNumber() -> String {
-        let prefix = template.passType.rawValue.prefix(2).uppercased()
-        let randomSuffix = String(format: "%06d", Int.random(in: 100000...999999))
-        return "\(prefix)\(randomSuffix)"
-    }
-    
-    private func createWalletPass() {
-        guard let template = selectedTemplate else { return }
-        
-        isCreatingPass = true
-        
-        Task {
-            do {
-                // Simulate pass creation process
-                try await Task.sleep(for: .seconds(2))
-                
-                await MainActor.run {
-                    // Create pass with PassKit
-                    let walletPass = WalletPassData(
-                        id: UUID().uuidString,
-                        passType: template.passType,
-                        organizationName: getFieldValue(for: "organizationName") ?? "Моя Компания",
-                        description: template.description,
-                        logoText: getFieldValue(for: "logoText") ?? template.name,
-                        foregroundColor: passData.textColor,
-                        backgroundColor: passData.backgroundColor,
-                        labelColor: passData.textColor,
-                        fields: passData.customFields,
-                        serialNumber: generateSerialNumber(),
-                        webServiceURL: "https://loyalty.app/api/passes/",
-                        authenticationToken: UUID().uuidString,
-                        relevantDate: Date(),
-                        maxDistance: 1000,
-                        createdAt: Date()
-                    )
-                    
-                    // Generate registration URL
-                    let registrationURL = generateRegistrationURL(for: walletPass)
-                    createdPassURL = registrationURL
-                    
-                    // Add to PassKit manager
-                    passKitManager.addPass(walletPass)
-                    
-                    isCreatingPass = false
-                    showingRegistrationFlow = true
-                }
-            } catch {
-                await MainActor.run {
-                    isCreatingPass = false
-                    print("Error creating pass: \\(error)")
-                }
-            }
-        }
-    }
-    
-    private func generateRegistrationURL(for pass: WalletPassData) -> String {
-        let baseURL = "https://loyalty.app/register"
-        let passID = pass.id
-        return "\\(baseURL)/\\(passID)"
     }
 }
 
@@ -5425,7 +5364,18 @@ struct RegistrationFlowView: View {
             }
         }
         .sheet(isPresented: $showingQRCode) {
-            QRCodeView(text: passURL, title: "QR-код для регистрации")
+            NavigationView {
+                QRCodeView(text: passURL)
+                    .navigationTitle("QR-код для регистрации")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button("Готово") {
+                                showingQRCode = false
+                            }
+                        }
+                    }
+            }
         }
     }
     
