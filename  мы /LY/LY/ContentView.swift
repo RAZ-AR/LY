@@ -2730,6 +2730,11 @@ struct PassBuilderView: View {
     @State private var selectedTemplate: PassTemplate?
     @State private var passData = PassCreationData()
     @State private var showingPreview = false
+    @State private var showFullSizePreview = false
+    @State private var isCreatingPass = false
+    @State private var showingRegistrationFlow = false
+    @State private var createdPassURL: String?
+    @State private var showingPointsManager = false
     
     // Templates like Walletsio
     let templates: [PassTemplate] = [
@@ -2743,7 +2748,16 @@ struct PassBuilderView: View {
             presetFields: [
                 PassFieldTemplate(key: "member", label: "Участник", placeholder: "Имя клиента"),
                 PassFieldTemplate(key: "points", label: "Баллы", placeholder: "0"),
-                PassFieldTemplate(key: "level", label: "Уровень", placeholder: "Базовый")
+                PassFieldTemplate(key: "level", label: "Уровень", placeholder: "Базовый"),
+                PassFieldTemplate(key: "memberID", label: "ID участника", placeholder: "LY001234"),
+                PassFieldTemplate(key: "balance", label: "Баланс", placeholder: "₽1,500"),
+                PassFieldTemplate(key: "expiryDate", label: "Действует до", placeholder: "31.12.2025"),
+                PassFieldTemplate(key: "website", label: "Веб-сайт", placeholder: "company.com"),
+                PassFieldTemplate(key: "phone", label: "Телефон", placeholder: "+7 999 123 45 67"),
+                PassFieldTemplate(key: "email", label: "Email", placeholder: "info@company.com"),
+                PassFieldTemplate(key: "location", label: "Адрес", placeholder: "Москва, ул. Примерная 123"),
+                PassFieldTemplate(key: "socialMedia", label: "Instagram", placeholder: "@company_official"),
+                PassFieldTemplate(key: "barcode", label: "Штрих-код", placeholder: "123456789012")
             ]
         ),
         PassTemplate(
@@ -2846,6 +2860,22 @@ struct PassBuilderView: View {
                         dismiss()
                     }
                 }
+            }
+            .sheet(isPresented: $showFullSizePreview) {
+                if let template = selectedTemplate {
+                    FullSizePassPreview(template: template, passData: passData)
+                }
+            }
+            .sheet(isPresented: $showingRegistrationFlow) {
+                if let passURL = createdPassURL {
+                    RegistrationFlowView(passURL: passURL, onDismiss: {
+                        showingRegistrationFlow = false
+                        dismiss()
+                    })
+                }
+            }
+            .sheet(isPresented: $showingPointsManager) {
+                PointsManagementView(pointsManager: PointsManager())
             }
         }
     }
@@ -3059,57 +3089,340 @@ struct PassBuilderView: View {
     private var previewAndCreateView: some View {
         ScrollView {
             VStack(spacing: 24) {
-                // Final Preview
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Готовый пасс")
-                        .font(.headline)
+                // Interactive Final Preview
+                VStack(alignment: .leading, spacing: 20) {
+                    HStack {
+                        Text("Финальный предпросмотр")
+                            .font(.title2.bold())
+                        
+                        Spacer()
+                        
+                        Button {
+                            // Toggle edit mode
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "pencil")
+                                Text("Редактировать")
+                            }
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(.blue.opacity(0.1))
+                            .cornerRadius(8)
+                        }
+                    }
+                    .padding(.horizontal)
+                    
+                    Text("Так ваш пасс будет выглядеть в Apple Wallet")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
                         .padding(.horizontal)
                     
                     if let template = selectedTemplate {
-                        FinalPassPreview(template: template, passData: passData)
-                            .padding(.horizontal)
+                        VStack(spacing: 20) {
+                            // Interactive Editable Preview with Enhanced Animations
+                            InteractiveEditablePassPreview(
+                                template: template, 
+                                passData: $passData,
+                                onFieldEdit: { field, newValue in
+                                    withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                                        updateFieldValue(key: field.key, value: newValue, label: field.label)
+                                    }
+                                }
+                            )
+                            .transition(.asymmetric(
+                                insertion: .scale(scale: 0.8).combined(with: .opacity).combined(with: .slide),
+                                removal: .scale(scale: 1.1).combined(with: .opacity)
+                            ))
+                            .animation(.spring(response: 0.6, dampingFraction: 0.7), value: passData.organizationName)
+                            .animation(.spring(response: 0.6, dampingFraction: 0.7), value: passData.passDescription)
+                            
+                            // Drag & Drop Layout Editor
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack {
+                                    Image(systemName: "hand.draw")
+                                        .foregroundColor(.blue)
+                                    Text("Редактор расположения полей")
+                                        .font(.subheadline.bold())
+                                    Spacer()
+                                    Text("Перетащите поля")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                DraggableFieldContainer(
+                                    template: template,
+                                    passData: $passData,
+                                    onFieldEdit: { field, newValue in
+                                        updateFieldValue(key: field.key, value: newValue, label: field.label)
+                                    }
+                                )
+                                .background(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .fill(.gray.opacity(0.05))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 16)
+                                                .stroke(.gray.opacity(0.2), lineWidth: 1)
+                                        )
+                                )
+                                
+                                HStack {
+                                    Image(systemName: "info.circle")
+                                        .foregroundColor(.blue)
+                                        .font(.caption)
+                                    Text("Нажмите и перетащите поля для изменения их расположения")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                        .padding(.horizontal)
                     }
                 }
                 
-                // Pass Information Summary
-                VStack(alignment: .leading, spacing: 20) {
-                    FormSection(title: "Сводка") {
-                        VStack(spacing: 12) {
-                            InfoRow(title: "Тип пасса", value: selectedTemplate?.name ?? "")
-                            InfoRow(title: "Организация", value: passData.organizationName)
-                            InfoRow(title: "Описание", value: passData.passDescription)
-                            InfoRow(title: "Полей", value: "\(passData.customFields.count)")
+                // Quick Actions
+                VStack(spacing: 16) {
+                    Text("Быстрые действия")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal)
+                    
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                        QuickActionCard(
+                            title: "Реальный размер",
+                            icon: "eye.fill",
+                            color: .blue
+                        ) {
+                            showFullSizePreview = true
+                        }
+                        
+                        QuickActionCard(
+                            title: "Тестовые данные",
+                            icon: "testtube.2",
+                            color: .orange
+                        ) {
+                            fillWithTestData()
+                        }
+                        
+                        QuickActionCard(
+                            title: "Очистить поля",
+                            icon: "eraser.fill",
+                            color: .red
+                        ) {
+                            clearAllFields()
+                        }
+                        
+                        QuickActionCard(
+                            title: "Копировать настройки",
+                            icon: "doc.on.doc.fill",
+                            color: .green
+                        ) {
+                            // Copy settings action
                         }
                     }
+                    .padding(.horizontal)
                 }
-                .padding()
                 
-                // Create Button
-                Button {
-                    createPass()
-                } label: {
-                    HStack {
-                        Image(systemName: "wallet.pass.fill")
-                        Text("Создать пасс")
-                            .font(.headline)
-                    }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(
-                        LinearGradient(
-                            colors: [.blue, .purple],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+                // Pass Statistics
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Статистика пасса")
+                        .font(.headline)
+                        .padding(.horizontal)
+                    
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                        StatCard(
+                            title: "Заполнено полей",
+                            value: "\(passData.customFields.filter { !$0.value.isEmpty }.count)/\(selectedTemplate?.presetFields.count ?? 0)",
+                            icon: "checkmark.circle.fill",
+                            color: .green
                         )
-                    )
-                    .cornerRadius(16)
-                    .shadow(radius: 4)
+                        
+                        StatCard(
+                            title: "Символов",
+                            value: "\(passData.customFields.reduce(0) { $0 + $1.value.count })",
+                            icon: "textformat.abc",
+                            color: .blue
+                        )
+                        
+                        StatCard(
+                            title: "Готовность",
+                            value: "\(Int(completionPercentage))%",
+                            icon: "chart.pie.fill",
+                            color: .purple
+                        )
+                    }
+                    .padding(.horizontal)
                 }
-                .padding()
-                .disabled(!isFormValid)
+                
+                // Create Button with Progress
+                VStack(spacing: 12) {
+                    // Progress Bar
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Готовность к созданию")
+                                .font(.subheadline.bold())
+                            Spacer()
+                            Text("\(Int(completionPercentage))%")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        GeometryReader { geometry in
+                            ZStack(alignment: .leading) {
+                                Rectangle()
+                                    .fill(.gray.opacity(0.2))
+                                    .frame(height: 8)
+                                    .cornerRadius(4)
+                                
+                                Rectangle()
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [.blue, .purple],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
+                                    )
+                                    .frame(width: geometry.size.width * (completionPercentage / 100), height: 8)
+                                    .cornerRadius(4)
+                                    .animation(.easeInOut(duration: 0.5), value: completionPercentage)
+                            }
+                        }
+                        .frame(height: 8)
+                    }
+                    .padding(.horizontal)
+                    
+                    // Create Button
+                    Button {
+                        createWalletPass()
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: isCreatingPass ? "hourglass" : (isFormValid ? "wallet.pass.fill" : "exclamationmark.triangle.fill"))
+                                .font(.title3)
+                                .scaleEffect(isCreatingPass ? 1.2 : 1.0)
+                                .animation(.easeInOut(duration: 0.6).repeatForever(), value: isCreatingPass)
+                            
+                            Text(isCreatingPass ? "Создание пасса..." : (isFormValid ? "Создать пасс" : "Заполните обязательные поля"))
+                                .font(.headline)
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(
+                            LinearGradient(
+                                colors: isCreatingPass ? [.green, .blue] : (isFormValid ? [.blue, .purple] : [.gray, .gray.opacity(0.8)]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .cornerRadius(16)
+                        .shadow(radius: isFormValid ? 8 : 4)
+                        .scaleEffect(isFormValid ? 1.0 : 0.98)
+                        .animation(.spring(response: 0.3), value: isFormValid)
+                    }
+                    .padding(.horizontal)
+                    .disabled(!isFormValid || isCreatingPass)
+                }
+                .padding(.bottom, 20)
             }
         }
+    }
+    
+    // MARK: - Helper Properties and Computed Values
+    
+    private var completionPercentage: Double {
+        guard let template = selectedTemplate else { return 0 }
+        
+        let requiredFieldsCount = template.presetFields.count
+        let filledFieldsCount = passData.customFields.filter { !$0.value.isEmpty }.count
+        let organizationFilled = !passData.organizationName.isEmpty
+        let descriptionFilled = !passData.passDescription.isEmpty
+        
+        let totalRequired = requiredFieldsCount + 2 // org name + description
+        let totalFilled = filledFieldsCount + (organizationFilled ? 1 : 0) + (descriptionFilled ? 1 : 0)
+        
+        return min(100, Double(totalFilled) / Double(totalRequired) * 100)
+    }
+    
+    private func fillWithTestData() {
+        guard let template = selectedTemplate else { return }
+        
+        withAnimation(.easeInOut(duration: 0.5)) {
+            passData.organizationName = "Кофейня 'Утро'"
+            passData.passDescription = "Карта постоянного клиента"
+            
+            // Fill with realistic test data based on field type
+            for fieldTemplate in template.presetFields {
+                let testValue: String
+                switch fieldTemplate.key {
+                case "member", "customerName":
+                    testValue = "Иван Петров"
+                case "points":
+                    testValue = "1250"
+                case "level":
+                    testValue = "Золотой"
+                case "memberID":
+                    testValue = "LY001234"
+                case "expiryDate":
+                    testValue = "31.12.2025"
+                case "balance":
+                    testValue = "₽850"
+                case "website":
+                    testValue = "loyaltyclub.ru"
+                case "phone":
+                    testValue = "+7 999 123 45 67"
+                case "email":
+                    testValue = "info@loyaltyclub.ru"
+                case "location":
+                    testValue = "Москва, ул. Тверская 10"
+                case "socialMedia":
+                    testValue = "@loyaltyclub_official"
+                case "barcode":
+                    testValue = "4607812345678"
+                case "discount":
+                    testValue = "15%"
+                case "expires":
+                    testValue = "31.12.2025"
+                case "code":
+                    testValue = "SAVE15"
+                case "event":
+                    testValue = "Концерт группы XYZ"
+                case "date":
+                    testValue = "25 июня 2025, 19:00"
+                case "seat":
+                    testValue = "Партер, ряд 5, место 12"
+                case "passenger":
+                    testValue = "Петров И.И."
+                case "flight":
+                    testValue = "SU 1234"
+                case "gate":
+                    testValue = "A12"
+                case "id":
+                    testValue = "123456"
+                case "status":
+                    testValue = "Активен"
+                case "amount":
+                    testValue = "5,000 ₽"
+                default:
+                    testValue = fieldTemplate.placeholder
+                }
+                updateFieldValue(key: fieldTemplate.key, value: testValue, label: fieldTemplate.label)
+            }
+        }
+        
+        // Haptic feedback
+        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+        impactFeedback.impactOccurred()
+    }
+    
+    private func clearAllFields() {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            passData.customFields.removeAll()
+        }
+        
+        // Haptic feedback
+        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+        impactFeedback.impactOccurred()
     }
     
     private var bottomNavigationBar: some View {
@@ -3916,6 +4229,150 @@ struct FinalPassPreview: View {
 
 // MARK: - Enhanced Visual Components
 
+struct DraggableFieldContainer: View {
+    let template: PassTemplate
+    @Binding var passData: PassCreationData
+    let onFieldEdit: (PassFieldTemplate, String) -> Void
+    
+    @State private var draggedField: PassFieldTemplate?
+    @State private var fieldPositions: [String: CGPoint] = [:]
+    
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                // Background Pass Shape
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(
+                        LinearGradient(
+                            colors: [passData.backgroundColor, passData.backgroundColor.opacity(0.8)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 20)
+                            .stroke(.white.opacity(0.2), lineWidth: 1)
+                    )
+                
+                // Draggable Fields
+                ForEach(template.presetFields, id: \.key) { fieldTemplate in
+                    DraggableFieldView(
+                        fieldTemplate: fieldTemplate,
+                        currentValue: getFieldValue(for: fieldTemplate.key),
+                        position: fieldPositions[fieldTemplate.key] ?? getDefaultPosition(for: fieldTemplate, in: geometry.size),
+                        isDragging: draggedField?.key == fieldTemplate.key,
+                        onEdit: { newValue in
+                            onFieldEdit(fieldTemplate, newValue)
+                        },
+                        onDragChanged: { value in
+                            fieldPositions[fieldTemplate.key] = value.location
+                        },
+                        onDragEnded: { value in
+                            draggedField = nil
+                            fieldPositions[fieldTemplate.key] = value.location
+                        }
+                    )
+                    .onTapGesture {
+                        draggedField = fieldTemplate
+                    }
+                }
+            }
+        }
+        .frame(height: 200)
+        .onAppear {
+            initializeFieldPositions()
+        }
+    }
+    
+    private func getFieldValue(for key: String) -> String {
+        return passData.customFields.first(where: { $0.key == key })?.value ?? ""
+    }
+    
+    private func getDefaultPosition(for field: PassFieldTemplate, in size: CGSize) -> CGPoint {
+        let spacing: CGFloat = 30
+        let startY: CGFloat = 60
+        
+        switch field.key {
+        case "customerName": return CGPoint(x: 20, y: startY)
+        case "points": return CGPoint(x: size.width - 100, y: startY)
+        case "level": return CGPoint(x: 20, y: startY + spacing)
+        case "memberID": return CGPoint(x: size.width - 100, y: startY + spacing)
+        case "expiryDate": return CGPoint(x: 20, y: startY + spacing * 2)
+        case "balance": return CGPoint(x: size.width - 100, y: startY + spacing * 2)
+        default: return CGPoint(x: 20, y: startY + spacing * 3)
+        }
+    }
+    
+    private func initializeFieldPositions() {
+        for field in template.presetFields {
+            if fieldPositions[field.key] == nil {
+                fieldPositions[field.key] = getDefaultPosition(for: field, in: CGSize(width: 350, height: 200))
+            }
+        }
+    }
+}
+
+struct DraggableFieldView: View {
+    let fieldTemplate: PassFieldTemplate
+    let currentValue: String
+    let position: CGPoint
+    let isDragging: Bool
+    let onEdit: (String) -> Void
+    let onDragChanged: (DragGesture.Value) -> Void
+    let onDragEnded: (DragGesture.Value) -> Void
+    
+    @State private var isEditing = false
+    @State private var editValue = ""
+    @FocusState private var isFocused: Bool
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(fieldTemplate.label)
+                .font(.caption2)
+                .foregroundColor(.white.opacity(0.7))
+            
+            if isEditing {
+                TextField(fieldTemplate.placeholder, text: $editValue)
+                    .focused($isFocused)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.caption)
+                    .frame(width: 120)
+                    .onSubmit {
+                        onEdit(editValue)
+                        isEditing = false
+                    }
+                    .onAppear {
+                        editValue = currentValue
+                        isFocused = true
+                    }
+            } else {
+                Text(currentValue.isEmpty ? fieldTemplate.placeholder : currentValue)
+                    .font(.caption.bold())
+                    .foregroundColor(currentValue.isEmpty ? .white.opacity(0.5) : .white)
+                    .italic(currentValue.isEmpty)
+                    .frame(width: 120, alignment: .leading)
+                    .onTapGesture {
+                        isEditing = true
+                    }
+            }
+        }
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(.white.opacity(isDragging ? 0.3 : 0.15))
+                .shadow(color: .black.opacity(isDragging ? 0.3 : 0.1), radius: isDragging ? 8 : 4)
+        )
+        .scaleEffect(isDragging ? 1.05 : 1.0)
+        .position(position)
+        .gesture(
+            DragGesture()
+                .onChanged(onDragChanged)
+                .onEnded(onDragEnded)
+        )
+        .animation(.spring(response: 0.3), value: isDragging)
+    }
+}
+
 struct InteractivePassPreview: View {
     let template: PassTemplate
     let passData: PassCreationData
@@ -4140,27 +4597,1161 @@ struct VisualFieldCustomizationCard: View {
     
     private func getFieldIcon() -> String {
         switch fieldTemplate.key {
-        case "customerName": return "person.fill"
+        case "member", "customerName": return "person.fill"
         case "points": return "star.fill"
         case "level": return "crown.fill"
         case "memberID": return "number"
         case "expiryDate": return "calendar"
         case "balance": return "dollarsign.circle.fill"
+        case "website": return "globe"
+        case "phone": return "phone.fill"
+        case "email": return "envelope.fill"
+        case "location": return "location.fill"
+        case "socialMedia": return "camera.fill"
+        case "barcode": return "barcode"
+        case "discount": return "percent"
+        case "expires": return "clock.fill"
+        case "code": return "qrcode"
+        case "event": return "calendar.badge.exclamationmark"
+        case "date": return "calendar.circle"
+        case "seat": return "chair.fill"
+        case "passenger": return "person.circle"
+        case "flight": return "airplane"
+        case "gate": return "door.left.hand.open"
+        case "id": return "creditcard"
+        case "status": return "checkmark.shield"
+        case "amount": return "banknote"
         default: return "text.alignleft"
         }
     }
     
     private func getFieldColor() -> Color {
         switch fieldTemplate.key {
-        case "customerName": return .blue
+        case "member", "customerName": return .blue
         case "points": return .orange
         case "level": return .purple
         case "memberID": return .green
         case "expiryDate": return .red
         case "balance": return .mint
+        case "website": return .blue
+        case "phone": return .green
+        case "email": return .blue
+        case "location": return .red
+        case "socialMedia": return .purple
+        case "barcode": return .black
+        case "discount": return .orange
+        case "expires": return .red
+        case "code": return .blue
+        case "event": return .purple
+        case "date": return .blue
+        case "seat": return .brown
+        case "passenger": return .blue
+        case "flight": return .blue
+        case "gate": return .green
+        case "id": return .gray
+        case "status": return .green
+        case "amount": return .green
         default: return .gray
         }
     }
+}
+
+// MARK: - Interactive Editable Pass Preview
+
+struct InteractiveEditablePassPreview: View {
+    let template: PassTemplate
+    @Binding var passData: PassCreationData
+    let onFieldEdit: (PassFieldTemplate, String) -> Void
+    
+    @State private var isEditMode = false
+    @State private var editingField: String? = nil
+    @State private var tempFieldValues: [String: String] = [:]
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            // Pass Preview with Edit Capability
+            VStack(alignment: .leading, spacing: 16) {
+                // Header Section - Editable
+                HStack {
+                    Image(systemName: template.icon)
+                        .foregroundColor(.white)
+                        .font(.title)
+                        .frame(width: 40, height: 40)
+                        .background(Circle().fill(.white.opacity(0.2)))
+                    
+                    VStack(alignment: .leading, spacing: 6) {
+                        EditableTextField(
+                            text: passData.organizationName.isEmpty ? "Название организации" : passData.organizationName,
+                            placeholder: "Название организации",
+                            isEditing: editingField == "organization"
+                        ) { newValue in
+                            passData.organizationName = newValue
+                            editingField = nil
+                        } onEdit: {
+                            editingField = "organization"
+                        }
+                        .font(.title3.bold())
+                        .foregroundColor(.white)
+                        
+                        EditableTextField(
+                            text: passData.passDescription.isEmpty ? "Описание пасса" : passData.passDescription,
+                            placeholder: "Описание пасса",
+                            isEditing: editingField == "description"
+                        ) { newValue in
+                            passData.passDescription = newValue
+                            editingField = nil
+                        } onEdit: {
+                            editingField = "description"
+                        }
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.9))
+                    }
+                    
+                    Spacer()
+                    
+                    // Interactive QR Code with Animation
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(.white)
+                            .frame(width: 70, height: 70)
+                            .shadow(color: .black.opacity(0.1), radius: 2)
+                        
+                        VStack(spacing: 2) {
+                            ForEach(0..<4) { row in
+                                HStack(spacing: 2) {
+                                    ForEach(0..<4) { col in
+                                        Rectangle()
+                                            .fill(.black)
+                                            .frame(width: 4, height: 4)
+                                            .opacity(Double.random(in: 0.3...1.0))
+                                            .animation(
+                                                .easeInOut(duration: Double.random(in: 1.5...3.0))
+                                                .repeatForever(autoreverses: true),
+                                                value: passData.customFields.count
+                                            )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                Divider()
+                    .background(.white.opacity(0.4))
+                
+                // Editable Fields Section
+                VStack(alignment: .leading, spacing: 16) {
+                    ForEach(template.presetFields, id: \.key) { fieldTemplate in
+                        let currentValue = getFieldValue(for: fieldTemplate.key)
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                HStack(spacing: 6) {
+                                    Circle()
+                                        .fill(.white.opacity(currentValue.isEmpty ? 0.3 : 0.8))
+                                        .frame(width: 6, height: 6)
+                                        .scaleEffect(currentValue.isEmpty ? 1.0 : 1.3)
+                                        .animation(.easeInOut(duration: 0.3), value: currentValue)
+                                    
+                                    Text("\(fieldTemplate.label):")
+                                        .font(.caption)
+                                        .foregroundColor(.white.opacity(0.8))
+                                }
+                                
+                                Spacer()
+                                
+                                if editingField == fieldTemplate.key {
+                                    HStack(spacing: 8) {
+                                        Button("✓") {
+                                            if let tempValue = tempFieldValues[fieldTemplate.key] {
+                                                onFieldEdit(fieldTemplate, tempValue)
+                                            }
+                                            editingField = nil
+                                            tempFieldValues.removeValue(forKey: fieldTemplate.key)
+                                        }
+                                        .foregroundColor(.green)
+                                        .font(.caption.bold())
+                                        
+                                        Button("✕") {
+                                            editingField = nil
+                                            tempFieldValues.removeValue(forKey: fieldTemplate.key)
+                                        }
+                                        .foregroundColor(.red)
+                                        .font(.caption.bold())
+                                    }
+                                }
+                            }
+                            
+                            // Editable Field Value
+                            EditableFieldValue(
+                                fieldTemplate: fieldTemplate,
+                                currentValue: currentValue,
+                                isEditing: editingField == fieldTemplate.key,
+                                tempValue: Binding(
+                                    get: { tempFieldValues[fieldTemplate.key] ?? currentValue },
+                                    set: { tempFieldValues[fieldTemplate.key] = $0 }
+                                )
+                            ) {
+                                editingField = fieldTemplate.key
+                                tempFieldValues[fieldTemplate.key] = currentValue
+                            }
+                        }
+                    }
+                }
+                
+                // Pass Footer
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Серийный номер")
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.6))
+                        Text(generateDisplaySerialNumber())
+                            .font(.caption2.bold())
+                            .foregroundColor(.white.opacity(0.9))
+                    }
+                    
+                    Spacer()
+                    
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("Создан")
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.6))
+                        Text(Date(), style: .date)
+                            .font(.caption2.bold())
+                            .foregroundColor(.white.opacity(0.9))
+                    }
+                }
+            }
+            .padding(20)
+            .background(
+                LinearGradient(
+                    colors: [passData.backgroundColor, passData.backgroundColor.opacity(0.8)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .cornerRadius(20)
+            .shadow(color: passData.backgroundColor.opacity(0.4), radius: 12, x: 0, y: 6)
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(.white.opacity(0.2), lineWidth: 1)
+            )
+            .scaleEffect(1.02)
+            .onTapGesture {
+                editingField = nil
+                tempFieldValues.removeAll()
+            }
+            
+            // Edit Instructions
+            if editingField == nil {
+                HStack {
+                    Image(systemName: "hand.tap")
+                        .foregroundColor(.blue)
+                    Text("Нажмите на любое поле для редактирования")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal)
+                .opacity(0.8)
+            } else {
+                HStack {
+                    Image(systemName: "keyboard")
+                        .foregroundColor(.blue)
+                    Text("Введите новое значение и нажмите ✓ для сохранения")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal)
+            }
+        }
+    }
+    
+    private func getFieldValue(for key: String) -> String {
+        return passData.customFields.first(where: { $0.key == key })?.value ?? ""
+    }
+    
+    private func generateDisplaySerialNumber() -> String {
+        let prefix = template.passType.rawValue.prefix(2).uppercased()
+        return "\(prefix)••••••"
+    }
+}
+
+struct EditableTextField: View {
+    let text: String
+    let placeholder: String
+    let isEditing: Bool
+    let onSave: (String) -> Void
+    let onEdit: () -> Void
+    
+    @State private var editText: String = ""
+    @FocusState private var isFocused: Bool
+    
+    var body: some View {
+        Group {
+            if isEditing {
+                TextField(placeholder, text: $editText)
+                    .focused($isFocused)
+                    .textFieldStyle(PlainTextFieldStyle())
+                    .onSubmit {
+                        onSave(editText)
+                    }
+                    .onAppear {
+                        editText = text == placeholder ? "" : text
+                        isFocused = true
+                    }
+            } else {
+                Text(text)
+                    .onTapGesture {
+                        onEdit()
+                    }
+                    .overlay(
+                        Rectangle()
+                            .fill(.clear)
+                            .contentShape(Rectangle())
+                    )
+            }
+        }
+    }
+}
+
+struct EditableFieldValue: View {
+    let fieldTemplate: PassFieldTemplate
+    let currentValue: String
+    let isEditing: Bool
+    @Binding var tempValue: String
+    let onEdit: () -> Void
+    
+    @FocusState private var isFocused: Bool
+    
+    var body: some View {
+        HStack {
+            if isEditing {
+                TextField(fieldTemplate.placeholder, text: $tempValue)
+                    .focused($isFocused)
+                    .textFieldStyle(PlainTextFieldStyle())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.white.opacity(0.9))
+                    .cornerRadius(6)
+                    .foregroundColor(.black)
+                    .onAppear {
+                        isFocused = true
+                    }
+            } else {
+                Text(currentValue.isEmpty ? fieldTemplate.placeholder : currentValue)
+                    .font(.subheadline.bold())
+                    .foregroundColor(currentValue.isEmpty ? .white.opacity(0.5) : .white)
+                    .italic(currentValue.isEmpty)
+                    .onTapGesture {
+                        onEdit()
+                    }
+                
+                Spacer()
+                
+                if currentValue.isEmpty {
+                    Image(systemName: "plus.circle")
+                        .foregroundColor(.white.opacity(0.6))
+                        .font(.caption)
+                        .onTapGesture {
+                            onEdit()
+                        }
+                } else {
+                    Image(systemName: "pencil.circle")
+                        .foregroundColor(.white.opacity(0.6))
+                        .font(.caption)
+                        .onTapGesture {
+                            onEdit()
+                        }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Quick Action Cards
+
+struct QuickActionCard: View {
+    let title: String
+    let icon: String
+    let color: Color
+    let action: () -> Void
+    
+    @State private var isPressed = false
+    @State private var animateIcon = false
+    
+    var body: some View {
+        Button(action: {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
+                animateIcon = true
+            }
+            
+            // Haptic feedback
+            let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+            impactFeedback.impactOccurred()
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                action()
+                withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                    animateIcon = false
+                }
+            }
+        }) {
+            VStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [color.opacity(0.3), color.opacity(0.1)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 50, height: 50)
+                        .scaleEffect(animateIcon ? 1.3 : 1.0)
+                        .animation(.spring(response: 0.4, dampingFraction: 0.6), value: animateIcon)
+                    
+                    Image(systemName: icon)
+                        .foregroundColor(color)
+                        .font(.title2)
+                        .scaleEffect(animateIcon ? 1.2 : 1.0)
+                        .rotationEffect(.degrees(animateIcon ? 360 : 0))
+                        .animation(.spring(response: 0.5, dampingFraction: 0.7), value: animateIcon)
+                    
+                    // Ripple Effect
+                    if animateIcon {
+                        Circle()
+                            .stroke(color.opacity(0.3), lineWidth: 2)
+                            .frame(width: 50, height: 50)
+                            .scaleEffect(animateIcon ? 2.0 : 1.0)
+                            .opacity(animateIcon ? 0 : 1)
+                            .animation(.easeOut(duration: 0.6), value: animateIcon)
+                    }
+                }
+                
+                Text(title)
+                    .font(.caption.bold())
+                    .foregroundColor(.primary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .scaleEffect(animateIcon ? 1.05 : 1.0)
+                    .animation(.spring(response: 0.3), value: animateIcon)
+            }
+            .padding()
+            .frame(maxWidth: .infinity)
+            .frame(height: 100)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.white)
+                    .shadow(color: .black.opacity(isPressed ? 0.15 : 0.05), radius: isPressed ? 8 : 4, x: 0, y: isPressed ? 4 : 2)
+            )
+            .scaleEffect(isPressed ? 0.95 : 1.0)
+            .animation(.spring(response: 0.2, dampingFraction: 0.8), value: isPressed)
+        }
+        .buttonStyle(PlainButtonStyle())
+        .onTapGesture {
+            withAnimation(.spring(response: 0.2)) {
+                isPressed = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                withAnimation(.spring(response: 0.2)) {
+                    isPressed = false
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Full Size Pass Preview
+
+struct FullSizePassPreview: View {
+    let template: PassTemplate
+    let passData: PassCreationData
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            GeometryReader { geometry in
+                ScrollView {
+                    VStack(spacing: 30) {
+                        // Full Size Pass (actual iOS Wallet dimensions)
+                        VStack(alignment: .leading, spacing: 20) {
+                            // Pass Header
+                            HStack {
+                                Image(systemName: template.icon)
+                                    .foregroundColor(.white)
+                                    .font(.title)
+                                    .frame(width: 50, height: 50)
+                                    .background(Circle().fill(.white.opacity(0.3)))
+                                
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(passData.organizationName.isEmpty ? "Название организации" : passData.organizationName)
+                                        .font(.title2.bold())
+                                        .foregroundColor(.white)
+                                    Text(passData.passDescription.isEmpty ? "Описание пасса" : passData.passDescription)
+                                        .font(.subheadline)
+                                        .foregroundColor(.white.opacity(0.9))
+                                }
+                                
+                                Spacer()
+                                
+                                // Large QR Code
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(.white)
+                                        .frame(width: 80, height: 80)
+                                    
+                                    VStack(spacing: 3) {
+                                        ForEach(0..<5) { row in
+                                            HStack(spacing: 3) {
+                                                ForEach(0..<5) { col in
+                                                    Rectangle()
+                                                        .fill(.black)
+                                                        .frame(width: 6, height: 6)
+                                                        .opacity(Double.random(in: 0.3...1.0))
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                                .background(.white.opacity(0.4))
+                            
+                            // All Fields Display
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 20) {
+                                ForEach(template.presetFields, id: \.key) { fieldTemplate in
+                                    let value = getFieldValue(for: fieldTemplate.key)
+                                    
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        HStack {
+                                            Image(systemName: getFieldIcon(for: fieldTemplate.key))
+                                                .foregroundColor(.white.opacity(0.8))
+                                                .font(.caption)
+                                            Text(fieldTemplate.label)
+                                                .font(.caption)
+                                                .foregroundColor(.white.opacity(0.8))
+                                        }
+                                        
+                                        Text(value.isEmpty ? fieldTemplate.placeholder : value)
+                                            .font(.subheadline.bold())
+                                            .foregroundColor(value.isEmpty ? .white.opacity(0.6) : .white)
+                                            .italic(value.isEmpty)
+                                    }
+                                    .padding()
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .fill(.white.opacity(0.1))
+                                    )
+                                }
+                            }
+                            
+                            // Pass Footer
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Серийный номер")
+                                        .font(.caption2)
+                                        .foregroundColor(.white.opacity(0.7))
+                                    Text(generateSerialNumber())
+                                        .font(.caption.bold())
+                                        .foregroundColor(.white)
+                                }
+                                
+                                Spacer()
+                                
+                                VStack(alignment: .trailing, spacing: 4) {
+                                    Text("Создан")
+                                        .font(.caption2)
+                                        .foregroundColor(.white.opacity(0.7))
+                                    Text(Date(), style: .date)
+                                        .font(.caption.bold())
+                                        .foregroundColor(.white)
+                                }
+                            }
+                        }
+                        .padding(24)
+                        .frame(width: min(375, geometry.size.width - 40)) // iPhone width
+                        .frame(height: 220) // Standard pass height
+                        .background(
+                            RoundedRectangle(cornerRadius: 25)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [passData.backgroundColor, passData.backgroundColor.opacity(0.8)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                        )
+                        .shadow(color: passData.backgroundColor.opacity(0.4), radius: 15, x: 0, y: 8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 25)
+                                .stroke(.white.opacity(0.3), lineWidth: 1)
+                        )
+                        
+                        // Size Information
+                        VStack(spacing: 12) {
+                            Text("Реальный размер пасса в Apple Wallet")
+                                .font(.headline)
+                                .foregroundColor(.secondary)
+                            
+                            HStack(spacing: 20) {
+                                VStack {
+                                    Text("Ширина")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Text("375 пт")
+                                        .font(.caption.bold())
+                                }
+                                
+                                VStack {
+                                    Text("Высота")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Text("220 пт")
+                                        .font(.caption.bold())
+                                }
+                                
+                                VStack {
+                                    Text("Соотношение")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Text("1.7:1")
+                                        .font(.caption.bold())
+                                }
+                            }
+                            .padding()
+                            .background(.gray.opacity(0.1))
+                            .cornerRadius(12)
+                        }
+                    }
+                    .padding()
+                }
+            }
+            .navigationTitle("Предпросмотр в реальном размере")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Готово") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+    
+    private func getFieldValue(for key: String) -> String {
+        return passData.customFields.first(where: { $0.key == key })?.value ?? ""
+    }
+    
+    private func getFieldIcon(for key: String) -> String {
+        switch key {
+        case "member", "customerName": return "person.fill"
+        case "points": return "star.fill"
+        case "level": return "crown.fill"
+        case "memberID": return "number"
+        case "expiryDate": return "calendar"
+        case "balance": return "dollarsign.circle.fill"
+        case "website": return "globe"
+        case "phone": return "phone.fill"
+        case "email": return "envelope.fill"
+        default: return "text.alignleft"
+        }
+    }
+    
+    private func generateSerialNumber() -> String {
+        let prefix = template.passType.rawValue.prefix(2).uppercased()
+        let randomSuffix = String(format: "%06d", Int.random(in: 100000...999999))
+        return "\(prefix)\(randomSuffix)"
+    }
+    
+    private func createWalletPass() {
+        guard let template = selectedTemplate else { return }
+        
+        isCreatingPass = true
+        
+        Task {
+            do {
+                // Simulate pass creation process
+                try await Task.sleep(for: .seconds(2))
+                
+                await MainActor.run {
+                    // Create pass with PassKit
+                    let walletPass = WalletPassData(
+                        id: UUID().uuidString,
+                        passType: template.passType,
+                        organizationName: getFieldValue(for: "organizationName") ?? "Моя Компания",
+                        description: template.description,
+                        logoText: getFieldValue(for: "logoText") ?? template.name,
+                        foregroundColor: passData.textColor,
+                        backgroundColor: passData.backgroundColor,
+                        labelColor: passData.textColor,
+                        fields: passData.customFields,
+                        serialNumber: generateSerialNumber(),
+                        webServiceURL: "https://loyalty.app/api/passes/",
+                        authenticationToken: UUID().uuidString,
+                        relevantDate: Date(),
+                        maxDistance: 1000,
+                        createdAt: Date()
+                    )
+                    
+                    // Generate registration URL
+                    let registrationURL = generateRegistrationURL(for: walletPass)
+                    createdPassURL = registrationURL
+                    
+                    // Add to PassKit manager
+                    passKitManager.addPass(walletPass)
+                    
+                    isCreatingPass = false
+                    showingRegistrationFlow = true
+                }
+            } catch {
+                await MainActor.run {
+                    isCreatingPass = false
+                    print("Error creating pass: \\(error)")
+                }
+            }
+        }
+    }
+    
+    private func generateRegistrationURL(for pass: WalletPassData) -> String {
+        let baseURL = "https://loyalty.app/register"
+        let passID = pass.id
+        return "\\(baseURL)/\\(passID)"
+    }
+}
+
+// MARK: - Registration Flow Views
+
+struct RegistrationFlowView: View {
+    let passURL: String
+    let onDismiss: () -> Void
+    @State private var showingQRCode = false
+    @State private var qrCodeImage: UIImage?
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 30) {
+                Spacer()
+                
+                // Success Icon
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 80))
+                    .foregroundColor(.green)
+                
+                VStack(spacing: 16) {
+                    Text("Пасс создан!")
+                        .font(.title.bold())
+                    
+                    Text("Теперь отправьте ссылку клиентам для регистрации")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                
+                // Registration URL
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Ссылка для регистрации:")
+                        .font(.headline)
+                    
+                    HStack {
+                        Text(passURL)
+                            .font(.subheadline)
+                            .foregroundColor(.blue)
+                            .padding()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.blue.opacity(0.1))
+                            .cornerRadius(8)
+                        
+                        Button {
+                            UIPasteboard.general.string = passURL
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .foregroundColor(.blue)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.blue.opacity(0.1))
+                        .cornerRadius(8)
+                    }
+                }
+                .padding()
+                .background(.gray.opacity(0.05))
+                .cornerRadius(12)
+                
+                // Actions
+                VStack(spacing: 12) {
+                    Button {
+                        showingQRCode = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "qrcode")
+                            Text("Показать QR-код")
+                        }
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(.blue)
+                        .cornerRadius(12)
+                    }
+                    
+                    Button {
+                        shareRegistrationLink()
+                    } label: {
+                        HStack {
+                            Image(systemName: "square.and.arrow.up")
+                            Text("Поделиться ссылкой")
+                        }
+                        .font(.subheadline)
+                        .foregroundColor(.blue)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(.blue.opacity(0.1))
+                        .cornerRadius(12)
+                    }
+                }
+                
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Пасс создан")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Готово") {
+                        onDismiss()
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showingQRCode) {
+            QRCodeView(text: passURL, title: "QR-код для регистрации")
+        }
+    }
+    
+    private func shareRegistrationLink() {
+        let activityVC = UIActivityViewController(
+            activityItems: [passURL],
+            applicationActivities: nil
+        )
+        
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let window = windowScene.windows.first {
+            window.rootViewController?.present(activityVC, animated: true)
+        }
+    }
+}
+
+// MARK: - Customer Registration Views (Web)
+
+struct WebCustomerRegistrationView: View {
+    let passURL: String
+    @State private var registrationData = CustomerRegistrationData()
+    @State private var isRegistering = false
+    @State private var showingSuccess = false
+    @State private var createdUser: User?
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Header
+                    VStack(spacing: 12) {
+                        Image(systemName: "person.card.fill")
+                            .font(.system(size: 50))
+                            .foregroundColor(.blue)
+                        
+                        Text("Регистрация")
+                            .font(.title2.bold())
+                        
+                        Text("Присоединяйтесь к программе лояльности")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding()
+                    
+                    // Registration Form
+                    VStack(spacing: 16) {
+                        CustomTextField(
+                            title: "Имя*",
+                            text: $registrationData.name,
+                            placeholder: "Введите ваше имя"
+                        )
+                        
+                        CustomTextField(
+                            title: "Телефон",
+                            text: $registrationData.phone,
+                            placeholder: "+7 999 123 45 67"
+                        )
+                        
+                        CustomTextField(
+                            title: "Email",
+                            text: $registrationData.email,
+                            placeholder: "example@mail.com"
+                        )
+                        
+                        // Birthday picker
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Дата рождения")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            
+                            Button {
+                                // Show date picker
+                            } label: {
+                                HStack {
+                                    Text(registrationData.birthday?.formatted(date: .abbreviated, time: .omitted) ?? "Выберите дату")
+                                        .foregroundColor(registrationData.birthday == nil ? .secondary : .primary)
+                                    Spacer()
+                                    Image(systemName: "calendar")
+                                        .foregroundColor(.blue)
+                                }
+                                .padding()
+                                .background(.gray.opacity(0.05))
+                                .cornerRadius(8)
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(.white)
+                    .cornerRadius(16)
+                    .shadow(radius: 2)
+                    
+                    // Register Button
+                    Button {
+                        registerCustomer()
+                    } label: {
+                        HStack {
+                            if isRegistering {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .scaleEffect(0.8)
+                            } else {
+                                Image(systemName: "checkmark.circle.fill")
+                            }
+                            
+                            Text(isRegistering ? "Регистрация..." : "Зарегистрироваться")
+                                .font(.headline)
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(isFormValid ? .blue : .gray)
+                        .cornerRadius(12)
+                    }
+                    .disabled(!isFormValid || isRegistering)
+                }
+                .padding()
+            }
+            .navigationTitle("Новый участник")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .sheet(isPresented: $showingSuccess) {
+            if let user = createdUser {
+                WebCustomerSuccessView(user: user, passURL: passURL)
+            }
+        }
+    }
+    
+    private var isFormValid: Bool {
+        !registrationData.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    
+    private func registerCustomer() {
+        isRegistering = true
+        
+        Task {
+            try await Task.sleep(for: .seconds(1.5))
+            
+            await MainActor.run {
+                let user = User(
+                    name: registrationData.name,
+                    birthday: registrationData.birthday,
+                    phone: registrationData.phone.isEmpty ? nil : registrationData.phone,
+                    email: registrationData.email.isEmpty ? nil : registrationData.email,
+                    points: 0
+                )
+                
+                createdUser = user
+                isRegistering = false
+                showingSuccess = true
+            }
+        }
+    }
+}
+
+struct CustomerRegistrationData {
+    var name: String = ""
+    var phone: String = ""
+    var email: String = ""
+    var birthday: Date?
+}
+
+struct WebCustomerSuccessView: View {
+    let user: User
+    let passURL: String
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 30) {
+                Spacer()
+                
+                // Success Animation
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 100))
+                    .foregroundColor(.green)
+                
+                VStack(spacing: 16) {
+                    Text("Добро пожаловать!")
+                        .font(.largeTitle.bold())
+                    
+                    Text("Вы успешно зарегистрированы в программе лояльности")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                
+                // User Card Preview
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Text("Ваша карта")
+                            .font(.headline)
+                        Spacer()
+                        Text("Баллы: \(user.points)")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(user.name)
+                            .font(.title3.bold())
+                        
+                        if let phone = user.phone {
+                            Text(phone)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        if let email = user.email {
+                            Text(email)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding()
+                .background(.blue.opacity(0.1))
+                .cornerRadius(12)
+                
+                // Add to Wallet Button
+                Button {
+                    addToWallet()
+                } label: {
+                    HStack {
+                        Image(systemName: "wallet.pass.fill")
+                        Text("Добавить в Apple Wallet")
+                    }
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(.black)
+                    .cornerRadius(12)
+                }
+                
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Регистрация завершена")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Готово") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+    
+    private func addToWallet() {
+        // Add pass to Apple Wallet
+        print("Adding to wallet: \(passURL)")
+    }
+}
+
+// MARK: - Points Management System
+
+class PointsUpdateManager: ObservableObject {
+    @Published var passUpdates: [String: PassUpdate] = [:]
+    
+    private let updateTimer = Timer.publish(every: 24 * 60 * 60, on: .main, in: .common).autoconnect() // Daily
+    
+    init() {
+        // Listen for daily updates
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("DailyPassUpdate"),
+            object: nil,
+            queue: .main
+        ) { _ in
+            self.triggerDailyUpdate()
+        }
+    }
+    
+    func addPoints(to userId: String, amount: Int, description: String) {
+        let update = PassUpdate(
+            userId: userId,
+            pointsAdded: amount,
+            description: description,
+            timestamp: Date()
+        )
+        
+        passUpdates[userId] = update
+        schedulePassUpdate(for: userId)
+    }
+    
+    func updatePassDesign(masterDesign: PassDesignUpdate) {
+        // Update all passes with new design
+        for userId in passUpdates.keys {
+            schedulePassUpdate(for: userId)
+        }
+    }
+    
+    private func triggerDailyUpdate() {
+        // Send updates to all passes once per day
+        for (userId, update) in passUpdates {
+            sendPassUpdate(userId: userId, update: update)
+        }
+        
+        // Clear pending updates
+        passUpdates.removeAll()
+    }
+    
+    private func schedulePassUpdate(for userId: String) {
+        // Schedule update for next daily sync
+        print("Scheduled update for user: \(userId)")
+    }
+    
+    private func sendPassUpdate(userId: String, update: PassUpdate) {
+        // Send push notification to update pass
+        print("Sending pass update for \(userId): +\(update.pointsAdded) points")
+    }
+}
+
+struct PassUpdate {
+    let userId: String
+    let pointsAdded: Int
+    let description: String
+    let timestamp: Date
+}
+
+struct PassDesignUpdate {
+    let backgroundColor: Color
+    let textColor: Color
+    let logoUrl: String?
+    let templateChanges: [String: Any]
 }
 
 #Preview {
