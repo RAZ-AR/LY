@@ -5704,6 +5704,349 @@ struct PassDesignUpdate {
     let templateChanges: [String: Any]
 }
 
+// MARK: - Apple Wallet Style Card Stack
+
+struct WalletStackView: View {
+    @StateObject private var passKitManager = PassKitManager()
+    @State private var selectedCardIndex: Int = 0
+    @State private var dragOffset: CGSize = .zero
+    @State private var isExpanded: Bool = false
+    
+    let maxVisibleCards = 3
+    let cardSpacing: CGFloat = 8
+    let cardHeight: CGFloat = 200
+    
+    var body: some View {
+        GeometryReader { geometry in
+            VStack {
+                if passKitManager.passes.isEmpty {
+                    emptyStateView
+                } else {
+                    ZStack {
+                        ForEach(Array(zip(passKitManager.passes.indices, passKitManager.passes)), id: \.0) { index, pass in
+                            WalletCardView(pass: pass, isSelected: index == selectedCardIndex)
+                                .frame(height: cardHeight)
+                                .scaleEffect(scaleForCard(at: index))
+                                .offset(y: offsetForCard(at: index))
+                                .zIndex(Double(passKitManager.passes.count - index))
+                                .opacity(opacityForCard(at: index))
+                                .onTapGesture {
+                                    withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                                        if index == selectedCardIndex && !isExpanded {
+                                            isExpanded = true
+                                        } else {
+                                            selectedCardIndex = index
+                                            isExpanded = false
+                                        }
+                                    }
+                                }
+                                .gesture(
+                                    DragGesture()
+                                        .onChanged { value in
+                                            if index == selectedCardIndex {
+                                                dragOffset = value.translation
+                                            }
+                                        }
+                                        .onEnded { value in
+                                            if index == selectedCardIndex {
+                                                handleSwipeGesture(value: value)
+                                            }
+                                        }
+                                )
+                        }
+                    }
+                    .animation(.spring(response: 0.6, dampingFraction: 0.8), value: selectedCardIndex)
+                    .animation(.spring(response: 0.6, dampingFraction: 0.8), value: isExpanded)
+                }
+                
+                if isExpanded && !passKitManager.passes.isEmpty {
+                    expandedCardDetails
+                }
+                
+                Spacer()
+            }
+            .padding()
+        }
+        .navigationTitle("Wallet")
+        .navigationBarTitleDisplayMode(.large)
+    }
+    
+    private var emptyStateView: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "wallet.pass")
+                .font(.system(size: 60))
+                .foregroundColor(.gray)
+            
+            Text("No Cards")
+                .font(.title2.bold())
+            
+            Text("Your loyalty cards will appear here")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    
+    private var expandedCardDetails: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Card Details")
+                .font(.headline)
+            
+            let selectedPass = passKitManager.passes[selectedCardIndex]
+            
+            VStack(alignment: .leading, spacing: 8) {
+                Label(selectedPass.organizationName, systemImage: "building.2")
+                Label(selectedPass.description, systemImage: "doc.text")
+                Label("Serial: \(selectedPass.serialNumber)", systemImage: "number")
+                Label(selectedPass.passType.description, systemImage: "creditcard")
+            }
+            .padding()
+            .background(.gray.opacity(0.1))
+            .cornerRadius(12)
+            
+            HStack(spacing: 12) {
+                Button {
+                    // Show QR code
+                } label: {
+                    Label("QR Code", systemImage: "qrcode")
+                        .font(.subheadline)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 16)
+                        .background(.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+                }
+                
+                Button {
+                    // Share card
+                } label: {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                        .font(.subheadline)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 16)
+                        .background(.gray.opacity(0.2))
+                        .cornerRadius(8)
+                }
+                
+                Spacer()
+            }
+        }
+        .padding()
+        .background(.white)
+        .cornerRadius(16)
+        .shadow(radius: 2)
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
+    }
+    
+    private func scaleForCard(at index: Int) -> CGFloat {
+        if isExpanded && index == selectedCardIndex {
+            return 1.0
+        }
+        
+        let distance = abs(index - selectedCardIndex)
+        if distance == 0 {
+            return 1.0
+        } else if distance <= maxVisibleCards {
+            return 1.0 - (CGFloat(distance) * 0.05)
+        } else {
+            return 0.85
+        }
+    }
+    
+    private func offsetForCard(at index: Int) -> CGFloat {
+        if isExpanded && index == selectedCardIndex {
+            return dragOffset.y
+        }
+        
+        let distance = index - selectedCardIndex
+        if distance == 0 {
+            return dragOffset.y
+        } else if distance > 0 && distance <= maxVisibleCards {
+            return CGFloat(distance) * cardSpacing + dragOffset.y
+        } else if distance < 0 && abs(distance) <= maxVisibleCards {
+            return CGFloat(distance) * cardSpacing + dragOffset.y
+        } else {
+            return CGFloat(distance > 0 ? maxVisibleCards : -maxVisibleCards) * cardSpacing
+        }
+    }
+    
+    private func opacityForCard(at index: Int) -> Double {
+        let distance = abs(index - selectedCardIndex)
+        if distance == 0 {
+            return 1.0
+        } else if distance <= maxVisibleCards {
+            return 1.0 - (Double(distance) * 0.2)
+        } else {
+            return 0.0
+        }
+    }
+    
+    private func handleSwipeGesture(value: DragGesture.Value) {
+        let threshold: CGFloat = 100
+        
+        withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+            if value.translation.y < -threshold && selectedCardIndex > 0 {
+                selectedCardIndex -= 1
+            } else if value.translation.y > threshold && selectedCardIndex < passKitManager.passes.count - 1 {
+                selectedCardIndex += 1
+            }
+            
+            dragOffset = .zero
+            isExpanded = false
+        }
+    }
+}
+
+struct WalletCardView: View {
+    let pass: WalletPassData
+    let isSelected: Bool
+    
+    var body: some View {
+        ZStack {
+            // Card Background
+            LinearGradient(
+                colors: gradientColors,
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            
+            VStack(alignment: .leading, spacing: 12) {
+                // Header
+                HStack {
+                    Text(pass.organizationName)
+                        .font(.headline.bold())
+                        .foregroundColor(.white)
+                    
+                    Spacer()
+                    
+                    Image(systemName: passTypeIcon)
+                        .font(.title2)
+                        .foregroundColor(.white)
+                }
+                
+                Spacer()
+                
+                // Card Info
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(pass.description)
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.9))
+                    
+                    Text(pass.serialNumber)
+                        .font(.caption.monospaced())
+                        .foregroundColor(.white.opacity(0.7))
+                }
+                
+                // Pass Type Badge
+                HStack {
+                    Text(pass.passType.description)
+                        .font(.caption2.bold())
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.white.opacity(0.2))
+                        .foregroundColor(.white)
+                        .cornerRadius(4)
+                    
+                    Spacer()
+                    
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title3)
+                            .foregroundColor(.white)
+                    }
+                }
+            }
+            .padding(20)
+        }
+        .cornerRadius(16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(.white.opacity(0.2), lineWidth: 1)
+        )
+        .shadow(
+            color: .black.opacity(0.3),
+            radius: isSelected ? 10 : 5,
+            x: 0,
+            y: isSelected ? 8 : 4
+        )
+    }
+    
+    private var gradientColors: [Color] {
+        switch pass.passType {
+        case .storeCard:
+            return [.blue, .purple]
+        case .coupon:
+            return [.orange, .red]
+        case .eventTicket:
+            return [.green, .teal]
+        case .boardingPass:
+            return [.indigo, .blue]
+        case .generic:
+            return [.gray, .black]
+        }
+    }
+    
+    private var passTypeIcon: String {
+        switch pass.passType {
+        case .storeCard:
+            return "creditcard"
+        case .coupon:
+            return "percent"
+        case .eventTicket:
+            return "ticket"
+        case .boardingPass:
+            return "airplane"
+        case .generic:
+            return "doc"
+        }
+    }
+}
+
+// MARK: - Enhanced ContentView with Wallet Integration
+
+struct ContentView: View {
+    @State private var selectedTab = 0
+    @StateObject private var companyManager = CompanyManager()
+    @StateObject private var passKitManager = PassKitManager()
+    
+    var body: some View {
+        TabView(selection: $selectedTab) {
+            // Wallet Tab
+            NavigationView {
+                WalletStackView()
+            }
+            .tabItem {
+                Image(systemName: "wallet.pass")
+                Text("Wallet")
+            }
+            .tag(0)
+            
+            // Admin Panel Tab
+            NavigationView {
+                AdminDashboardView()
+                    .environmentObject(companyManager)
+            }
+            .tabItem {
+                Image(systemName: "person.badge.key")
+                Text("Admin")
+            }
+            .tag(1)
+            
+            // Scanner Tab
+            NavigationView {
+                ScannerView()
+            }
+            .tabItem {
+                Image(systemName: "qrcode.viewfinder")
+                Text("Scanner")
+            }
+            .tag(2)
+        }
+        .accentColor(.blue)
+    }
+}
+
 #Preview {
     ContentView()
 }
