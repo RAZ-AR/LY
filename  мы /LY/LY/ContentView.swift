@@ -10,6 +10,24 @@ import CoreImage.CIFilterBuiltins
 import Combine
 import PassKit
 
+// MARK: - Color Utilities
+extension Color {
+    static func fromRGBString(_ rgbString: String) -> Color {
+        // Parse "rgb(r, g, b)" format
+        let cleanString = rgbString.replacingOccurrences(of: "rgb(", with: "").replacingOccurrences(of: ")", with: "")
+        let components = cleanString.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        
+        guard components.count == 3,
+              let red = Double(components[0]),
+              let green = Double(components[1]),
+              let blue = Double(components[2]) else {
+            return Color.blue // fallback color
+        }
+        
+        return Color(red: red / 255.0, green: green / 255.0, blue: blue / 255.0)
+    }
+}
+
 // MARK: - QR Code Generation Utilities
 class QRCodeGenerator {
     static let shared = QRCodeGenerator()
@@ -52,7 +70,7 @@ class QRCodeGenerator {
 }
 
 // MARK: - Company Management Models
-struct Company: Identifiable {
+struct Company: Identifiable, Hashable {
     let id = UUID()
     let name: String
     let logo: String?
@@ -61,7 +79,7 @@ struct Company: Identifiable {
     let createdAt: Date = Date()
 }
 
-struct LoyaltyProgram: Identifiable {
+struct LoyaltyProgram: Identifiable, Hashable {
     let id = UUID()
     let companyId: UUID
     let name: String
@@ -71,7 +89,7 @@ struct LoyaltyProgram: Identifiable {
     let createdAt: Date = Date()
 }
 
-struct User: Identifiable {
+struct User: Identifiable, Hashable {
     let id = UUID()
     var name: String
     let birthday: Date?
@@ -280,7 +298,7 @@ struct RegistrationData {
     }
 }
 
-// MARK: - Pass Template Models (Walletsio Style)
+// MARK: - Pass Template Models
 struct PassTemplate: Identifiable {
     let id: String
     let name: String
@@ -322,6 +340,7 @@ struct WalletPassData: Identifiable {
     let serialNumber: String
     let webServiceURL: String?
     let authenticationToken: String?
+    let createdAt: Date
     
     var headerFields: [PassField] = []
     var primaryFields: [PassField] = []
@@ -354,6 +373,7 @@ struct WalletPassData: Identifiable {
         self.barcodeMessage = serialNumber
         self.barcodeFormat = "PKBarcodeFormatQR"
         self.barcodeMessageEncoding = "iso-8859-1"
+        self.createdAt = Date()
     }
 }
 
@@ -407,6 +427,10 @@ enum PassType: String, CaseIterable {
         case .storeCard: return "Карта лояльности"
         }
     }
+    
+    var displayName: String {
+        return description
+    }
 }
 
 // MARK: - PassKit Manager
@@ -440,8 +464,8 @@ class PassKitManager: NSObject, ObservableObject {
             return
         }
         
-        let passLibrary = PKPassLibrary()
-        let addPassViewController = PKAddPassesViewController(pass: pass)
+        _ = PKPassLibrary()
+        _ = PKAddPassesViewController(pass: pass)
         
         // В реальном приложении здесь был бы показ PKAddPassesViewController
         print("Добавление пасса в Wallet")
@@ -460,21 +484,102 @@ class PassKitManager: NSObject, ObservableObject {
     }
     
     private func loadDemoPasses() {
-        let demoPass1 = WalletPassData(
+        // Store Card with proper field hierarchy
+        var demoPass1 = WalletPassData(
             passType: .storeCard,
             organizationName: "Кофейня 'Дом'",
             description: "Карта лояльности",
             serialNumber: "LC001234567"
         )
         
-        let demoPass2 = WalletPassData(
+        // Header fields (visible in stack)
+        demoPass1.headerFields = [
+            PassField(key: "points", label: "Баллы", value: "1,250")
+        ]
+        
+        // Primary fields (most prominent)
+        demoPass1.primaryFields = [
+            PassField(key: "balance", label: "Баланс", value: "1,250 ₽"),
+            PassField(key: "level", label: "Уровень", value: "Gold")
+        ]
+        
+        // Secondary fields
+        demoPass1.secondaryFields = [
+            PassField(key: "member", label: "Участник с", value: "Янв 2024"),
+            PassField(key: "visits", label: "Посещений", value: "42"),
+            PassField(key: "expires", label: "Действует до", value: "Дек 2025")
+        ]
+        
+        // Auxiliary fields
+        demoPass1.auxiliaryFields = [
+            PassField(key: "cardNumber", label: "Номер карты", value: "****4567"),
+            PassField(key: "phone", label: "Телефон", value: "+7 999 123 45 67")
+        ]
+        
+        // Back fields
+        demoPass1.backFields = [
+            PassField(key: "address", label: "Адрес", value: "ул. Тверская, 12, Москва"),
+            PassField(key: "hours", label: "Часы работы", value: "Пн-Вс: 8:00-22:00"),
+            PassField(key: "website", label: "Сайт", value: "www.coffeehouse.ru"),
+            PassField(key: "support", label: "Поддержка", value: "+7 800 555 35 35")
+        ]
+        
+        // Coupon with different structure
+        var demoPass2 = WalletPassData(
             passType: .coupon,
             organizationName: "Ресторан 'Вкус'",
             description: "Скидочный купон",
             serialNumber: "CP001234567"
         )
         
-        passes = [demoPass1, demoPass2]
+        demoPass2.headerFields = [
+            PassField(key: "discount", label: "Скидка", value: "25%")
+        ]
+        
+        demoPass2.primaryFields = [
+            PassField(key: "offer", label: "Предложение", value: "25% скидка"),
+            PassField(key: "minOrder", label: "От суммы", value: "1,500 ₽")
+        ]
+        
+        demoPass2.secondaryFields = [
+            PassField(key: "validUntil", label: "Действует до", value: "31 Дек 2024"),
+            PassField(key: "category", label: "Категория", value: "Основные блюда")
+        ]
+        
+        demoPass2.auxiliaryFields = [
+            PassField(key: "terms", label: "Условия", value: "Не суммируется с другими акциями")
+        ]
+        
+        demoPass2.backFields = [
+            PassField(key: "description", label: "Описание", value: "Скидка действует на все основные блюда из меню"),
+            PassField(key: "restrictions", label: "Ограничения", value: "Не действует на напитки и десерты"),
+            PassField(key: "location", label: "Адрес", value: "ул. Арбат, 25, Москва")
+        ]
+        
+        // Event Ticket
+        var demoPass3 = WalletPassData(
+            passType: .eventTicket,
+            organizationName: "Театр 'Современник'",
+            description: "Билет на спектакль",
+            serialNumber: "ET001234567"
+        )
+        
+        demoPass3.headerFields = [
+            PassField(key: "event", label: "Спектакль", value: "Гамлет")
+        ]
+        
+        demoPass3.primaryFields = [
+            PassField(key: "showTime", label: "Время", value: "19:00"),
+            PassField(key: "seat", label: "Место", value: "Ряд 5, М. 12")
+        ]
+        
+        demoPass3.secondaryFields = [
+            PassField(key: "date", label: "Дата", value: "25 Дек 2024"),
+            PassField(key: "hall", label: "Зал", value: "Большой зал"),
+            PassField(key: "price", label: "Цена", value: "2,500 ₽")
+        ]
+        
+        passes = [demoPass1, demoPass2, demoPass3]
     }
 }
 
@@ -685,6 +790,9 @@ struct ContentView: View {
                     // Основной контент
                     ScrollView {
                         LazyVStack(spacing: 20) {
+                            // Feature Announcement Banner
+                            featureAnnouncementBanner
+                            
                             // Программы лояльности
                             loyaltyProgramsSection
                             
@@ -758,13 +866,14 @@ struct ContentView: View {
                 }
                 .tag(2)
             
-            // Пассы
+            // Пассы - управление
             PassesManagementView(passKitManager: passKitManager)
                 .tabItem {
-                    Image(systemName: "wallet.pass")
+                    Image(systemName: "wallet.pass.fill")
                     Text("Пассы")
                 }
                 .tag(3)
+                .badge("NEW")
             
             // Биллинг
             BillingView()
@@ -917,10 +1026,21 @@ struct AddCardView: View {
 }
 
 struct AnalyticsView: View {
+    @State private var selectedCompany: Company?
+    @State private var selectedProgram: LoyaltyProgram?
+    @State private var companies: [Company] = [
+        Company(name: "Кофейня 'Дом'", logo: nil, adminEmail: "admin@coffee.com"),
+        Company(name: "Демо-компания", logo: nil, adminEmail: "demo@example.com")
+    ]
+    
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 20) {
+            VStack(spacing: 0) {
+                // Selectors
+                selectorsSection
+                
+                ScrollView {
+                    VStack(spacing: 20) {
                     // Метрики
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
                         MetricCard(title: "Всего пользователей", value: "10,180", icon: "person.3", color: .blue)
@@ -945,9 +1065,123 @@ struct AnalyticsView: View {
                             )
                             .padding(.horizontal)
                     }
+                    }
                 }
             }
             .navigationTitle("Аналитика")
+        }
+    }
+    
+    private var selectorsSection: some View {
+        VStack(spacing: 12) {
+            // Company Selector
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Компания:")
+                        .font(.subheadline.bold())
+                    Spacer()
+                }
+                
+                Picker("Выберите компанию", selection: $selectedCompany) {
+                    Text("Все компании").tag(Company?.none)
+                    ForEach(companies) { company in
+                        Text(company.name).tag(Company?.some(company))
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+            
+            // Program Selector (только если выбрана компания)
+            if let selectedCompany = selectedCompany {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Программа лояльности:")
+                            .font(.subheadline.bold())
+                        Spacer()
+                    }
+                    
+                    if selectedCompany.loyaltyPrograms.isEmpty {
+                        Text("У компании нет программ лояльности")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding()
+                            .frame(maxWidth: .infinity)
+                            .background(.gray.opacity(0.1))
+                            .cornerRadius(8)
+                    } else {
+                        Picker("Выберите программу", selection: $selectedProgram) {
+                            Text("Все программы").tag(LoyaltyProgram?.none)
+                            ForEach(selectedCompany.loyaltyPrograms) { program in
+                                Text(program.name).tag(LoyaltyProgram?.some(program))
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .padding()
+                        .background(.white)
+                        .cornerRadius(8)
+                        .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+                    }
+                }
+            }
+            
+            // Current Selection Info
+            currentSelectionInfo
+            
+            Divider()
+        }
+        .padding()
+        .background(.gray.opacity(0.05))
+        .onChange(of: selectedCompany) {
+            selectedProgram = nil
+        }
+    }
+    
+    private var currentSelectionInfo: some View {
+        Group {
+            if let selectedProgram = selectedProgram {
+                HStack {
+                    Image(systemName: "chart.bar.doc.horizontal")
+                        .foregroundColor(.blue)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Аналитика для: \(selectedProgram.name)")
+                            .font(.caption.bold())
+                        Text("\(selectedProgram.users.count) пользователей")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(8)
+                .background(.blue.opacity(0.1))
+                .cornerRadius(6)
+            } else if let selectedCompany = selectedCompany {
+                HStack {
+                    Image(systemName: "building.2")
+                        .foregroundColor(.green)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Аналитика для: \(selectedCompany.name)")
+                            .font(.caption.bold())
+                        Text("\(selectedCompany.loyaltyPrograms.count) программ")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(8)
+                .background(.green.opacity(0.1))
+                .cornerRadius(6)
+            } else {
+                HStack {
+                    Image(systemName: "chart.pie")
+                        .foregroundColor(.purple)
+                    Text("Общая аналитика по всем компаниям")
+                        .font(.caption.bold())
+                    Spacer()
+                }
+                .padding(8)
+                .background(.purple.opacity(0.1))
+                .cornerRadius(6)
+            }
         }
     }
 }
@@ -980,62 +1214,419 @@ struct MetricCard: View {
 }
 
 struct BillingView: View {
+    @State private var selectedTab = 0
+    @State private var selectedCompany: Company?
+    @State private var showingTopUp = false
+    @State private var companies: [Company] = [
+        Company(name: "Кофейня 'Дом'", logo: nil, adminEmail: "admin@coffee.com"),
+        Company(name: "Демо-компания", logo: nil, adminEmail: "demo@example.com")
+    ]
+    
     var body: some View {
         NavigationView {
-            List {
-                Section("Текущий план") {
+            VStack(spacing: 0) {
+                // Segment Control
+                Picker("Режим", selection: $selectedTab) {
+                    Text("Общий биллинг").tag(0)
+                    Text("По компаниям").tag(1)
+                }
+                .pickerStyle(.segmented)
+                .padding()
+                
+                // Content
+                switch selectedTab {
+                case 0:
+                    generalBillingView
+                case 1:
+                    companyBillingView
+                default:
+                    generalBillingView
+                }
+            }
+            .navigationTitle("Биллинг")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showingTopUp = true
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                    }
+                }
+            }
+            .sheet(isPresented: $showingTopUp) {
+                TopUpView(selectedCompany: selectedTab == 1 ? selectedCompany : nil)
+            }
+        }
+    }
+    
+    private var generalBillingView: some View {
+        List {
+            // Общий баланс
+            Section {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Общий баланс")
+                            .font(.headline)
+                        Text("Доступно для всех компаний")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Text("₽125,450")
+                        .font(.title2.bold())
+                        .foregroundColor(.green)
+                }
+                .padding(.vertical, 8)
+            }
+                
+            Section("Текущий план") {
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text("Профессиональный")
+                            .font(.headline)
+                        Text("До 50,000 пользователей")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Text("₽49,900/мес")
+                        .font(.title3.bold())
+                }
+                .padding(.vertical, 4)
+            }
+            
+            Section("История платежей") {
+                ForEach(1...5, id: \.self) { index in
                     HStack {
                         VStack(alignment: .leading) {
-                            Text("Профессиональный")
-                                .font(.headline)
-                            Text("До 50,000 пользователей")
+                            Text(index == 1 ? "Пополнение баланса" : "Ежемесячная подписка")
+                                .font(.subheadline)
+                            Text("\(15 - index) мая 2025")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
                         Spacer()
-                        Text("₽49,900/мес")
-                            .font(.title3.bold())
-                    }
-                    .padding(.vertical, 4)
-                }
-                
-                Section("История платежей") {
-                    ForEach(1...3, id: \.self) { _ in
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text("Ежемесячная подписка")
-                                    .font(.subheadline)
-                                Text("15 мая 2025")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            Spacer()
-                            Text("₽49,900")
-                                .font(.subheadline.bold())
-                        }
-                    }
-                }
-                
-                Section("Статистика использования") {
-                    HStack {
-                        Text("Активные пользователи")
-                        Spacer()
-                        Text("10,180 / 50,000")
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    HStack {
-                        Text("API запросы в месяц")
-                        Spacer()
-                        Text("234,567 / ∞")
-                            .foregroundColor(.secondary)
+                        Text(index == 1 ? "+₽50,000" : "-₽49,900")
+                            .font(.subheadline.bold())
+                            .foregroundColor(index == 1 ? .green : .primary)
                     }
                 }
             }
-            .navigationTitle("Биллинг")
+            
+            Section("Статистика использования") {
+                HStack {
+                    Text("Активные пользователи")
+                    Spacer()
+                    Text("10,180 / 50,000")
+                        .foregroundColor(.secondary)
+                }
+                
+                HStack {
+                    Text("API запросы в месяц")
+                    Spacer()
+                    Text("234,567 / ∞")
+                        .foregroundColor(.secondary)
+                }
+                
+                HStack {
+                    Text("Количество компаний")
+                    Spacer()
+                    Text("\(companies.count)")
+                        .foregroundColor(.secondary)
+                }
+            }
         }
     }
     
+    private var companyBillingView: some View {
+        VStack(spacing: 0) {
+            // Company Selector
+            if !companies.isEmpty {
+                companySelector
+            }
+            
+            List {
+                if let company = selectedCompany {
+                    companyBillingContent(for: company)
+                } else {
+                    companyBillingOverview
+                }
+            }
+        }
+    }
+    
+    private var companySelector: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Text("Компания:")
+                    .font(.subheadline.bold())
+                Spacer()
+            }
+            
+            Picker("Выберите компанию", selection: $selectedCompany) {
+                Text("Обзор по всем").tag(Company?.none)
+                ForEach(companies) { company in
+                    Text(company.name).tag(Company?.some(company))
+                }
+            }
+            .pickerStyle(.segmented)
+            
+            Divider()
+        }
+        .padding()
+        .background(.gray.opacity(0.05))
+    }
+    
+    private var companyBillingOverview: some View {
+        ForEach(companies) { company in
+            Section(company.name) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Баланс компании")
+                            .font(.subheadline)
+                        Text(company.adminEmail)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Text("₽\(Int.random(in: 5000...25000))")
+                        .font(.headline)
+                        .foregroundColor(.blue)
+                }
+                
+                HStack {
+                    Text("Программы лояльности")
+                    Spacer()
+                    Text("\(company.loyaltyPrograms.count)")
+                        .foregroundColor(.secondary)
+                }
+                
+                HStack {
+                    Text("Последний платеж")
+                    Spacer()
+                    Text("\(Int.random(in: 1...30)) мая 2025")
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+    
+    private func companyBillingContent(for company: Company) -> some View {
+        Group {
+            Section("Баланс \(company.name)") {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Доступный баланс")
+                            .font(.headline)
+                        Text("Последнее пополнение: 12 мая 2025")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Text("₽\(Int.random(in: 10000...50000))")
+                        .font(.title2.bold())
+                        .foregroundColor(.green)
+                }
+                .padding(.vertical, 8)
+            }
+            
+            Section("Статистика расходов") {
+                HStack {
+                    Text("За текущий месяц")
+                    Spacer()
+                    Text("₽\(Int.random(in: 5000...15000))")
+                        .foregroundColor(.red)
+                }
+                
+                HStack {
+                    Text("Средний расход в день")
+                    Spacer()
+                    Text("₽\(Int.random(in: 200...800))")
+                        .foregroundColor(.secondary)
+                }
+                
+                HStack {
+                    Text("Активные программы")
+                    Spacer()
+                    Text("\(company.loyaltyPrograms.count)")
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            Section("История транзакций") {
+                ForEach(1...4, id: \.self) { index in
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(index % 2 == 0 ? "Начисление баллов" : "Списание за API")
+                                .font(.subheadline)
+                            Text("\(25 - index * 2) мая 2025")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Text(index % 2 == 0 ? "+₽\(Int.random(in: 100...500))" : "-₽\(Int.random(in: 50...200))")
+                            .font(.subheadline.bold())
+                            .foregroundColor(index % 2 == 0 ? .green : .red)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Top Up View
+
+struct TopUpView: View {
+    let selectedCompany: Company?
+    @Environment(\.dismiss) private var dismiss
+    
+    @State private var amount = ""
+    @State private var selectedMethod = "Банковская карта"
+    @State private var showingSuccess = false
+    
+    let paymentMethods = ["Банковская карта", "Банковский перевод", "Электронные деньги", "Криптовалюта"]
+    let quickAmounts = [5000, 10000, 25000, 50000, 100000]
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Пополнение баланса")
+                                .font(.headline)
+                            if let company = selectedCompany {
+                                Text("Для компании: \(company.name)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Text("Общий баланс")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        Spacer()
+                        Image(systemName: "plus.circle.fill")
+                            .foregroundColor(.green)
+                            .font(.title2)
+                    }
+                    .padding(.vertical, 8)
+                }
+                
+                Section("Сумма пополнения") {
+                    HStack {
+                        Text("₽")
+                            .font(.title2)
+                            .foregroundColor(.secondary)
+                        TextField("0", text: $amount)
+                            .font(.title2)
+                            .keyboardType(.numberPad)
+                    }
+                    .padding(.vertical, 4)
+                    
+                    // Quick amount buttons
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 12) {
+                        ForEach(quickAmounts, id: \.self) { quickAmount in
+                            Button("₽\(quickAmount.formatted())") {
+                                amount = String(quickAmount)
+                            }
+                            .font(.caption)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(.blue.opacity(0.1))
+                            .foregroundColor(.blue)
+                            .cornerRadius(16)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
+                
+                Section("Способ оплаты") {
+                    Picker("Способ оплаты", selection: $selectedMethod) {
+                        ForEach(paymentMethods, id: \.self) { method in
+                            HStack {
+                                Image(systemName: iconForPaymentMethod(method))
+                                Text(method)
+                            }
+                            .tag(method)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+                
+                if !amount.isEmpty, let amountValue = Int(amount), amountValue > 0 {
+                    Section("Итого к оплате") {
+                        HStack {
+                            Text("Сумма")
+                            Spacer()
+                            Text("₽\(amountValue.formatted())")
+                        }
+                        
+                        HStack {
+                            Text("Комиссия")
+                            Spacer()
+                            Text("₽\(Int(Double(amountValue) * 0.02).formatted())")
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Divider()
+                        
+                        HStack {
+                            Text("К списанию")
+                                .font(.headline)
+                            Spacer()
+                            Text("₽\(Int(Double(amountValue) * 1.02).formatted())")
+                                .font(.headline)
+                                .foregroundColor(.green)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Пополнение")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Отмена") {
+                        dismiss()
+                    }
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Пополнить") {
+                        performTopUp()
+                    }
+                    .disabled(amount.isEmpty || Int(amount) == nil || Int(amount) ?? 0 <= 0)
+                }
+            }
+            .alert("Успешно!", isPresented: $showingSuccess) {
+                Button("ОК") {
+                    dismiss()
+                }
+            } message: {
+                Text("Баланс пополнен на ₽\(amount). Средства будут зачислены в течение 15 минут.")
+            }
+        }
+    }
+    
+    private func iconForPaymentMethod(_ method: String) -> String {
+        switch method {
+        case "Банковская карта":
+            return "creditcard"
+        case "Банковский перевод":
+            return "building.columns"
+        case "Электронные деньги":
+            return "wallet.pass"
+        case "Криптовалюта":
+            return "bitcoinsign.circle"
+        default:
+            return "creditcard"
+        }
+    }
+    
+    private func performTopUp() {
+        // В реальном приложении здесь будет интеграция с платежной системой
+        showingSuccess = true
+    }
 }
 
 // MARK: - Helper Views для новой архитектуры
@@ -1069,6 +1660,41 @@ extension ContentView {
                 .background(.ultraThinMaterial)
             }
         }
+    }
+    
+    private var featureAnnouncementBanner: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "sparkles")
+                    .foregroundColor(.yellow)
+                    .font(.title2)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Новый Apple Wallet конструктор!")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    
+                    Text("Создавайте профессиональные пассы")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                Button("Попробовать") {
+                    selectedTab = 1 // Переключаемся на вкладку Apple Wallet
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+        }
+        .padding()
+        .background(.blue.opacity(0.1))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(.blue.opacity(0.3), lineWidth: 1)
+        )
     }
     
     private var loyaltyProgramsSection: some View {
@@ -1161,6 +1787,8 @@ struct LoyaltyProgramCardView: View {
     let program: LoyaltyProgram
     @State private var showingInviteLink = false
     @State private var showingCardPreview = false
+    @State private var showingProgramDetails = false
+    @State private var showingEditProgram = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1175,6 +1803,13 @@ struct LoyaltyProgramCardView: View {
                 Spacer()
                 
                 Menu {
+                    Button("Аналитика и статистика") {
+                        showingProgramDetails = true
+                    }
+                    Button("Редактировать программу") {
+                        showingEditProgram = true
+                    }
+                    Divider()
                     Button("Посмотреть ссылку") {
                         showInviteLink(program)
                     }
@@ -1184,7 +1819,6 @@ struct LoyaltyProgramCardView: View {
                     Button("Предпросмотр карты") {
                         showCardPreview(program)
                     }
-                    Button("Статистика") { }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                         .foregroundColor(.white)
@@ -1226,11 +1860,20 @@ struct LoyaltyProgramCardView: View {
         )
         .cornerRadius(16)
         .shadow(radius: 4)
+        .onTapGesture {
+            showingProgramDetails = true
+        }
         .sheet(isPresented: $showingInviteLink) {
             InviteLinkView(program: program)
         }
         .sheet(isPresented: $showingCardPreview) {
             CardPreviewView(program: program)
+        }
+        .sheet(isPresented: $showingProgramDetails) {
+            ProgramAnalyticsView(program: program)
+        }
+        .sheet(isPresented: $showingEditProgram) {
+            EditLoyaltyProgramView(program: program)
         }
     }
     
@@ -1630,6 +2273,7 @@ struct InviteLinkView: View {
     let program: LoyaltyProgram
     @State private var inviteLink: InviteLink
     @State private var showingQRCode = false
+    @State private var showingRegistration = false
     @Environment(\.dismiss) private var dismiss
     
     init(program: LoyaltyProgram) {
@@ -1734,6 +2378,17 @@ struct InviteLinkView: View {
                         }
                         
                         Button {
+                            showingRegistration = true
+                        } label: {
+                            Label("Протестировать регистрацию", systemImage: "person.badge.plus")
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(.green.opacity(0.2))
+                                .foregroundColor(.green)
+                                .cornerRadius(12)
+                        }
+                        
+                        Button {
                             regenerateLink()
                         } label: {
                             Label("Создать новую ссылку", systemImage: "arrow.clockwise")
@@ -1758,6 +2413,9 @@ struct InviteLinkView: View {
             }
             .sheet(isPresented: $showingQRCode) {
                 QRCodeView(text: inviteLink.fullUrl)
+            }
+            .sheet(isPresented: $showingRegistration) {
+                CustomerRegistrationView(program: program)
             }
         }
     }
@@ -2120,10 +2778,18 @@ struct PointsManagementView: View {
     @State private var selectedSegment = 0
     @State private var showingAddPoints = false
     @State private var showingPointsRules = false
+    @State private var selectedCompany: Company?
+    @State private var companies: [Company] = [
+        Company(name: "Кофейня 'Дом'", logo: nil, adminEmail: "admin@coffee.com"),
+        Company(name: "Демо-компания", logo: nil, adminEmail: "demo@example.com")
+    ]
     
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
+                // Company Selector
+                companySelector
+                
                 // Segment Control
                 Picker("Режим", selection: $selectedSegment) {
                     Text("Транзакции").tag(0)
@@ -2194,6 +2860,52 @@ struct PointsManagementView: View {
             }
             .padding()
         }
+    }
+    
+    private var companySelector: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Компания:")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal)
+            .padding(.top, 8)
+            
+            Picker("Выберите компанию", selection: $selectedCompany) {
+                Text("Все компании").tag(Company?.none)
+                ForEach(companies) { company in
+                    Text(company.name).tag(Company?.some(company))
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+            
+            if let selectedCompany = selectedCompany {
+                HStack {
+                    Image(systemName: "building.2")
+                        .foregroundColor(.blue)
+                    Text(selectedCompany.name)
+                        .font(.headline)
+                    Spacer()
+                    if !selectedCompany.loyaltyPrograms.isEmpty {
+                        Text("\(selectedCompany.loyaltyPrograms.count) программ")
+                            .font(.caption)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(.blue.opacity(0.2))
+                            .cornerRadius(8)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 12)
+            }
+            
+            Divider()
+        }
+        .background(.gray.opacity(0.05))
     }
 }
 
@@ -2464,21 +3176,36 @@ struct PassesManagementView: View {
     @State private var showingCreatePass = false
     @State private var selectedPass: WalletPassData?
     @State private var showingPassPreview = false
+    @State private var showingEditPass = false
+    @State private var searchText = ""
+    @State private var selectedPassType: PassType? = nil
+    @State private var selectedCompany: String? = nil
+    @State private var quickPassType: PassType? = nil
+    @State private var showingQuickCreator = false
+    
+    // Filter options
+    let passTypes: [PassType] = [.storeCard, .coupon, .eventTicket, .boardingPass, .generic]
+    let companies = ["Все компании", "Кофейня 'Дом'", "Демо-компания", "SportClub", "BeautySalon"]
     
     var body: some View {
         NavigationView {
-            ScrollView {
-                LazyVStack(spacing: 20) {
-                    // Header Stats
-                    passStatsSection
+            VStack(spacing: 0) {
+                // Filters Section
+                filtersSection
+                
+                ScrollView {
+                    LazyVStack(spacing: 20) {
+                        // Header Stats
+                        passStatsSection
                     
                     // Passes Grid
                     passesGridSection
                     
-                    // Quick Actions
-                    quickActionsSection
+                        // Quick Actions
+                        quickActionsSection
+                    }
+                    .padding()
                 }
-                .padding()
             }
             .navigationTitle("Управление пассами")
             .toolbar {
@@ -2486,16 +3213,35 @@ struct PassesManagementView: View {
                     Button {
                         showingCreatePass = true
                     } label: {
-                        Image(systemName: "plus.circle.fill")
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus.circle.fill")
+                            Text("Создать")
+                                .font(.headline)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 20)
+                                .fill(.blue)
+                        )
                     }
                 }
             }
             .sheet(isPresented: $showingCreatePass) {
-                PassBuilderView(passKitManager: passKitManager)
+                PassBuilderModeSelector(passKitManager: passKitManager)
+            }
+            .sheet(isPresented: $showingQuickCreator) {
+                QuickPassCreatorForType(passKitManager: passKitManager, passType: quickPassType)
             }
             .sheet(isPresented: $showingPassPreview) {
                 if let pass = selectedPass {
                     PassPreviewView(passData: pass, passKitManager: passKitManager)
+                }
+            }
+            .sheet(isPresented: $showingEditPass) {
+                if let pass = selectedPass {
+                    EditPassView(passData: pass, passKitManager: passKitManager)
                 }
             }
         }
@@ -2525,8 +3271,8 @@ struct PassesManagementView: View {
                 Text("Мои пассы")
                     .font(.headline)
                 Spacer()
-                if !passKitManager.passes.isEmpty {
-                    Text("\(passKitManager.passes.count)")
+                if !filteredPasses.isEmpty {
+                    Text("\(filteredPasses.count)")
                         .font(.caption)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
@@ -2535,14 +3281,39 @@ struct PassesManagementView: View {
                 }
             }
             
-            if passKitManager.passes.isEmpty {
-                emptyPassesView
+            if filteredPasses.isEmpty {
+                if passKitManager.passes.isEmpty {
+                    emptyPassesView
+                } else {
+                    emptyFilteredView
+                }
             } else {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
-                    ForEach(passKitManager.passes) { pass in
+                    ForEach(filteredPasses) { pass in
                         PassCardView(passData: pass) {
                             selectedPass = pass
                             showingPassPreview = true
+                        }
+                        .contextMenu {
+                            Button("Просмотр") {
+                                selectedPass = pass
+                                showingPassPreview = true
+                            }
+                            
+                            Button("Редактировать") {
+                                selectedPass = pass
+                                showingEditPass = true
+                            }
+                            
+                            Divider()
+                            
+                            Button("Дублировать", role: .none) {
+                                // Логика дублирования пасса
+                            }
+                            
+                            Button("Удалить", role: .destructive) {
+                                // Логика удаления пасса
+                            }
                         }
                     }
                 }
@@ -2551,28 +3322,105 @@ struct PassesManagementView: View {
     }
     
     private var emptyPassesView: some View {
+        VStack(spacing: 24) {
+            // Feature Announcement
+            VStack(spacing: 16) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [.blue.opacity(0.2), .blue.opacity(0.05)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 100, height: 100)
+                    
+                    VStack(spacing: 4) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(.blue)
+                        
+                        Image(systemName: "wallet.pass.fill")
+                            .font(.system(size: 30, weight: .medium))
+                            .foregroundColor(.blue)
+                    }
+                }
+                
+                VStack(spacing: 8) {
+                    Text("Конструктор")
+                        .font(.title2.bold())
+                        .foregroundColor(.primary)
+                    
+                    Text("Режим помощник")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.blue)
+                }
+                
+                Text("Создавайте Apple Wallet пассы за несколько простых шагов с новым интуитивным интерфейсом")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+            }
+            
+            // CTA Button
+            Button {
+                showingCreatePass = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "bolt.fill")
+                    Text("Конструктор")
+                        .font(.headline)
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(
+                    LinearGradient(
+                        colors: [.blue, .blue.opacity(0.8)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .cornerRadius(16)
+            }
+            .shadow(color: .blue.opacity(0.3), radius: 10, x: 0, y: 4)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(.white)
+                .shadow(color: .black.opacity(0.08), radius: 20, x: 0, y: 8)
+        )
+    }
+    
+    private var emptyFilteredView: some View {
         VStack(spacing: 16) {
-            Image(systemName: "wallet.pass")
-                .font(.system(size: 50))
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 40))
                 .foregroundColor(.gray)
             
-            Text("Нет созданных пассов")
+            Text("Ничего не найдено")
                 .font(.headline)
                 .foregroundColor(.secondary)
             
-            Text("Создайте свой первый Apple Wallet пасс для клиентов")
+            Text("Попробуйте изменить фильтры или условия поиска")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
             
             Button {
-                showingCreatePass = true
+                selectedPassType = nil
+                selectedCompany = nil
+                searchText = ""
             } label: {
-                Label("Создать пасс", systemImage: "plus.circle.fill")
+                Label("Очистить фильтры", systemImage: "xmark.circle")
                     .font(.subheadline)
-                    .foregroundColor(.white)
+                    .foregroundColor(.blue)
                     .padding()
-                    .background(.blue)
+                    .background(.blue.opacity(0.1))
                     .cornerRadius(12)
             }
         }
@@ -2623,9 +3471,118 @@ struct PassesManagementView: View {
         }
     }
     
+    private var filtersSection: some View {
+        VStack(spacing: 16) {
+            // Search bar
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
+                TextField("Поиск пассов...", text: $searchText)
+            }
+            .padding(10)
+            .background(.gray.opacity(0.1))
+            .cornerRadius(8)
+            
+            // Filter chips
+            HStack {
+                Text("Фильтры:")
+                    .font(.subheadline.bold())
+                Spacer()
+            }
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    // Pass Type Filter
+                    Menu {
+                        Button("Все типы") {
+                            selectedPassType = nil
+                        }
+                        ForEach(passTypes, id: \.self) { type in
+                            Button(type.displayName) {
+                                selectedPassType = type
+                            }
+                        }
+                    } label: {
+                        FilterChip(
+                            title: selectedPassType?.displayName ?? "Тип пасса",
+                            isSelected: selectedPassType != nil
+                        )
+                    }
+                    
+                    // Company Filter
+                    Menu {
+                        ForEach(companies, id: \.self) { company in
+                            Button(company) {
+                                selectedCompany = company == "Все компании" ? nil : company
+                            }
+                        }
+                    } label: {
+                        FilterChip(
+                            title: selectedCompany ?? "Компания",
+                            isSelected: selectedCompany != nil
+                        )
+                    }
+                    
+                    // Clear filters
+                    if selectedPassType != nil || selectedCompany != nil || !searchText.isEmpty {
+                        Button("Очистить") {
+                            selectedPassType = nil
+                            selectedCompany = nil
+                            searchText = ""
+                        }
+                        .font(.caption)
+                        .foregroundColor(.red)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(.red.opacity(0.1))
+                        .cornerRadius(16)
+                    }
+                }
+                .padding(.horizontal)
+            }
+            
+            // Results count
+            HStack {
+                Text("Найдено: \(filteredPasses.count)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
+            
+            Divider()
+        }
+        .padding()
+        .background(.white)
+    }
+    
+    private var filteredPasses: [WalletPassData] {
+        var passes = passKitManager.passes
+        
+        // Filter by search text
+        if !searchText.isEmpty {
+            passes = passes.filter { pass in
+                pass.organizationName.localizedCaseInsensitiveContains(searchText) ||
+                pass.description.localizedCaseInsensitiveContains(searchText)
+            }
+        }
+        
+        // Filter by pass type
+        if let selectedType = selectedPassType {
+            passes = passes.filter { $0.passType == selectedType }
+        }
+        
+        // Filter by company
+        if let selectedCompany = selectedCompany {
+            passes = passes.filter { $0.organizationName == selectedCompany }
+        }
+        
+        return passes
+    }
+    
     private func createQuickPass(type: PassType) {
         // Создание быстрого пасса с предустановленными настройками
-        showingCreatePass = true
+        quickPassType = type
+        showingQuickCreator = true
     }
 }
 
@@ -2722,6 +3679,632 @@ struct QuickActionButton: View {
     }
 }
 
+// MARK: - Quick Pass Creation
+
+struct QuickPassTemplate {
+    let id: String
+    let name: String
+    let description: String
+    let icon: String
+    let color: Color
+    let passType: PassType
+}
+
+struct PassBuilderModeSelector: View {
+    @ObservedObject var passKitManager: PassKitManager
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedMode: BuilderMode = .quick
+    @State private var showingQuickMode = false
+    @State private var showingAdvancedMode = false
+    
+    enum BuilderMode {
+        case quick, advanced
+    }
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 30) {
+                // Header - Enhanced Apple Style
+                VStack(spacing: 20) {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [.blue.opacity(0.2), .blue.opacity(0.05)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 120, height: 120)
+                        
+                        Image(systemName: "wallet.pass.fill")
+                            .font(.system(size: 50, weight: .medium))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.blue, .blue.opacity(0.7)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
+                    .scaleEffect(1.0)
+                    .animation(.easeInOut(duration: 2).repeatForever(autoreverses: true), value: UUID())
+                    
+                    VStack(spacing: 8) {
+                        Text("Конструктор")
+                            .font(.largeTitle.bold())
+                            .multilineTextAlignment(.center)
+                        
+                        Text("Режим помощник - выберите режим создания")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+                .padding(.top, 30)
+                
+                // Mode Cards
+                VStack(spacing: 20) {
+                    ModeCard(
+                        title: "⚡ Быстрое создание",
+                        description: "Создайте пасс за 3 простых шага в режиме помощник",
+                        icon: "bolt.fill",
+                        color: .blue,
+                        features: ["3 шага", "Готовые шаблоны", "Мгновенный результат", "NEW"],
+                        isSelected: selectedMode == .quick
+                    ) {
+                        selectedMode = .quick
+                    }
+                    
+                    ModeCard(
+                        title: "🔧 Продвинутый режим",
+                        description: "Полная настройка всех элементов",
+                        icon: "gearshape.fill",
+                        color: .orange,
+                        features: ["5 шагов", "Drag & Drop", "Все опции"],
+                        isSelected: selectedMode == .advanced
+                    ) {
+                        selectedMode = .advanced
+                    }
+                }
+                
+                Spacer()
+                
+                // Continue Button
+                Button {
+                    if selectedMode == .quick {
+                        showingQuickMode = true
+                    } else {
+                        showingAdvancedMode = true
+                    }
+                } label: {
+                    HStack {
+                        Image(systemName: selectedMode == .quick ? "bolt.fill" : "gearshape.fill")
+                        Text("Продолжить")
+                            .font(.headline)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(selectedMode == .quick ? .blue : .orange)
+                    .foregroundColor(.white)
+                    .cornerRadius(16)
+                }
+                .padding(.horizontal)
+            }
+            .padding()
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Отмена") { dismiss() }
+                }
+            }
+            .fullScreenCover(isPresented: $showingQuickMode) {
+                QuickPassCreator(passKitManager: passKitManager)
+            }
+            .fullScreenCover(isPresented: $showingAdvancedMode) {
+                PassBuilderView(passKitManager: passKitManager)
+            }
+        }
+    }
+}
+
+struct ModeCard: View {
+    let title: String
+    let description: String
+    let icon: String
+    let color: Color
+    let features: [String]
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    // Enhanced Icon with gradient
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [color.opacity(0.2), color.opacity(0.05)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 60, height: 60)
+                        
+                        Image(systemName: icon)
+                            .font(.title)
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [color, color.opacity(0.7)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
+                    
+                    Spacer()
+                    
+                    // Enhanced selection indicator
+                    if isSelected {
+                        ZStack {
+                            Circle()
+                                .fill(color)
+                                .frame(width: 32, height: 32)
+                            
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+                        .scaleEffect(isSelected ? 1.0 : 0.8)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isSelected)
+                    }
+                }
+                
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(title)
+                        .font(.title2.bold())
+                        .foregroundColor(.primary)
+                    
+                    Text(description)
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                    
+                    // Enhanced Features with better styling
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                        ForEach(features, id: \.self) { feature in
+                            HStack(spacing: 4) {
+                                if feature == "NEW" {
+                                    Image(systemName: "sparkles")
+                                        .font(.caption2)
+                                } else {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.caption2)
+                                }
+                                
+                                Text(feature)
+                                    .font(.caption.weight(.medium))
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                Capsule()
+                                    .fill(feature == "NEW" ? .green.opacity(0.1) : color.opacity(0.1))
+                            )
+                            .foregroundColor(feature == "NEW" ? .green : color)
+                        }
+                    }
+                }
+            }
+            .padding(24)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(.white)
+                    .shadow(color: .black.opacity(isSelected ? 0.15 : 0.08), radius: isSelected ? 20 : 10, x: 0, y: isSelected ? 8 : 4)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(
+                        LinearGradient(
+                            colors: isSelected ? [color.opacity(0.6), color.opacity(0.2)] : [.clear],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: isSelected ? 2 : 0
+                    )
+            )
+            .scaleEffect(isSelected ? 1.02 : 1.0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isSelected)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct QuickPassCreator: View {
+    @ObservedObject var passKitManager: PassKitManager
+    @Environment(\.dismiss) private var dismiss
+    
+    @State private var selectedTemplate: QuickPassTemplate?
+    @State private var organizationName = ""
+    @State private var description = ""
+    @State private var selectedColor = Color.blue
+    @State private var showingPreview = false
+    
+    // Quick templates (simplified)
+    let quickTemplates: [QuickPassTemplate] = [
+        QuickPassTemplate(
+            id: "loyalty",
+            name: "Карта лояльности",
+            description: "Программа лояльности",
+            icon: "creditcard.fill",
+            color: .blue,
+            passType: .storeCard
+        ),
+        QuickPassTemplate(
+            id: "coupon",
+            name: "Купон скидки",
+            description: "Скидочный купон",
+            icon: "tag.fill",
+            color: .orange,
+            passType: .coupon
+        ),
+        QuickPassTemplate(
+            id: "ticket",
+            name: "Билет",
+            description: "Билет на мероприятие",
+            icon: "ticket.fill",
+            color: .green,
+            passType: .eventTicket
+        ),
+        QuickPassTemplate(
+            id: "membership",
+            name: "Членская карта",
+            description: "Карта участника",
+            icon: "person.card.fill",
+            color: .purple,
+            passType: .generic
+        )
+    ]
+    
+    let quickColors: [Color] = [.blue, .green, .orange, .purple, .red, .pink, .indigo, .teal]
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 32) {
+                    // Header
+                    VStack(spacing: 16) {
+                        Image(systemName: "bolt.circle.fill")
+                            .font(.system(size: 50))
+                            .foregroundColor(.blue)
+                        
+                        Text("Быстрое создание")
+                            .font(.title.bold())
+                        
+                        Text("3 простых шага до готового пасса")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.top)
+                    
+                    VStack(spacing: 32) {
+                        // Step 1: Template Selection
+                        QuickStepCard(
+                            stepNumber: 1,
+                            title: "Выберите тип пасса",
+                            isCompleted: selectedTemplate != nil
+                        ) {
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+                                ForEach(quickTemplates, id: \.id) { template in
+                                    QuickTemplateButton(
+                                        template: template,
+                                        isSelected: selectedTemplate?.id == template.id
+                                    ) {
+                                        selectedTemplate = template
+                                        selectedColor = template.color
+                                        
+                                        // Haptic feedback
+                                        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                                        impactFeedback.impactOccurred()
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Step 2: Basic Info
+                        QuickStepCard(
+                            stepNumber: 2,
+                            title: "Основная информация",
+                            isCompleted: !organizationName.isEmpty
+                        ) {
+                            VStack(spacing: 16) {
+                                TextField("Название организации", text: $organizationName)
+                                    .font(.headline)
+                                    .padding()
+                                    .background(.gray.opacity(0.1))
+                                    .cornerRadius(12)
+                                
+                                TextField("Описание (необязательно)", text: $description, axis: .vertical)
+                                    .lineLimit(2...4)
+                                    .padding()
+                                    .background(.gray.opacity(0.1))
+                                    .cornerRadius(12)
+                            }
+                        }
+                        
+                        // Step 3: Color Selection
+                        QuickStepCard(
+                            stepNumber: 3,
+                            title: "Выберите цвет",
+                            isCompleted: true
+                        ) {
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 12) {
+                                ForEach(quickColors, id: \.self) { color in
+                                    Circle()
+                                        .fill(color)
+                                        .frame(width: 50, height: 50)
+                                        .overlay(
+                                            Circle()
+                                                .stroke(.white, lineWidth: selectedColor == color ? 4 : 0)
+                                        )
+                                        .shadow(color: selectedColor == color ? color.opacity(0.5) : .clear, radius: 8)
+                                        .scaleEffect(selectedColor == color ? 1.1 : 1.0)
+                                        .animation(.spring(response: 0.3), value: selectedColor)
+                                        .onTapGesture {
+                                            selectedColor = color
+                                            
+                                            // Haptic feedback
+                                            let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+                                            impactFeedback.impactOccurred()
+                                        }
+                                }
+                            }
+                        }
+                        
+                        // Live Preview
+                        if selectedTemplate != nil && !organizationName.isEmpty {
+                            VStack(spacing: 12) {
+                                Text("Предпросмотр")
+                                    .font(.headline)
+                                
+                                QuickPassPreview(
+                                    template: selectedTemplate!,
+                                    organizationName: organizationName,
+                                    description: description,
+                                    color: selectedColor
+                                )
+                                .transition(.scale.combined(with: .opacity))
+                            }
+                            .animation(.spring(response: 0.5), value: organizationName)
+                            .animation(.spring(response: 0.5), value: selectedColor)
+                        }
+                    }
+                    
+                    Spacer(minLength: 100)
+                }
+                .padding()
+            }
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Назад") { dismiss() }
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Продвинутый") {
+                        // Switch to advanced mode
+                    }
+                    .font(.caption)
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                // Create Button
+                Button {
+                    createQuickPass()
+                } label: {
+                    HStack {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.title2)
+                        Text("Создать пасс")
+                            .font(.headline)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(canCreatePass ? selectedColor : .gray.opacity(0.3))
+                    .foregroundColor(.white)
+                    .cornerRadius(16)
+                }
+                .disabled(!canCreatePass)
+                .padding()
+                .background(.ultraThinMaterial)
+            }
+        }
+    }
+    
+    var canCreatePass: Bool {
+        selectedTemplate != nil && !organizationName.isEmpty
+    }
+    
+    func createQuickPass() {
+        guard let template = selectedTemplate else { return }
+        
+        // Create pass with minimal configuration
+        let passData = WalletPassData(
+            passType: template.passType,
+            organizationName: organizationName,
+            description: description.isEmpty ? template.description : description,
+            serialNumber: "LY\(String(format: "%06d", Int.random(in: 100000...999999)))"
+        )
+        
+        // Add to PassKit manager
+        passKitManager.passes.append(passData)
+        
+        // Success feedback
+        let notificationFeedback = UINotificationFeedbackGenerator()
+        notificationFeedback.notificationOccurred(.success)
+        
+        dismiss()
+    }
+}
+
+struct QuickStepCard<Content: View>: View {
+    let stepNumber: Int
+    let title: String
+    let isCompleted: Bool
+    @ViewBuilder let content: Content
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                // Step number
+                ZStack {
+                    Circle()
+                        .fill(isCompleted ? .green : .blue)
+                        .frame(width: 32, height: 32)
+                    
+                    if isCompleted {
+                        Image(systemName: "checkmark")
+                            .font(.headline.bold())
+                            .foregroundColor(.white)
+                    } else {
+                        Text("\(stepNumber)")
+                            .font(.headline.bold())
+                            .foregroundColor(.white)
+                    }
+                }
+                
+                Text(title)
+                    .font(.headline)
+                
+                Spacer()
+            }
+            
+            content
+        }
+        .padding(20)
+        .background(.white)
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
+    }
+}
+
+struct QuickTemplateButton: View {
+    let template: QuickPassTemplate
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 12) {
+                // Icon
+                ZStack {
+                    Circle()
+                        .fill(template.color.opacity(0.1))
+                        .frame(width: 60, height: 60)
+                    
+                    Image(systemName: template.icon)
+                        .font(.title)
+                        .foregroundColor(template.color)
+                }
+                
+                VStack(spacing: 4) {
+                    Text(template.name)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                        .multilineTextAlignment(.center)
+                    
+                    Text(template.description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(isSelected ? template.color.opacity(0.1) : .gray.opacity(0.05))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(isSelected ? template.color : .gray.opacity(0.2), lineWidth: isSelected ? 2 : 1)
+            )
+            .cornerRadius(16)
+            .scaleEffect(isSelected ? 1.05 : 1.0)
+            .animation(.spring(response: 0.3), value: isSelected)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct QuickPassPreview: View {
+    let template: QuickPassTemplate
+    let organizationName: String
+    let description: String
+    let color: Color
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Top section
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(organizationName)
+                        .font(.headline.bold())
+                        .foregroundColor(.white)
+                    
+                    if !description.isEmpty {
+                        Text(description)
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.8))
+                    } else {
+                        Text(template.description)
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                }
+                
+                Spacer()
+                
+                Image(systemName: template.icon)
+                    .font(.title)
+                    .foregroundColor(.white)
+            }
+            .padding()
+            .background(color.gradient)
+            
+            // Bottom section
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Номер карты")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("LY001234")
+                        .font(.subheadline.bold())
+                        .foregroundColor(.primary)
+                }
+                
+                Spacer()
+                
+                // QR Code placeholder
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(.black)
+                    .frame(width: 50, height: 50)
+                    .overlay(
+                        Image(systemName: "qrcode")
+                            .foregroundColor(.white)
+                            .font(.title3)
+                    )
+            }
+            .padding()
+            .background(.white)
+        }
+        .frame(width: 300, height: 180)
+        .cornerRadius(16)
+        .shadow(color: color.opacity(0.3), radius: 12, x: 0, y: 8)
+    }
+}
+
 struct PassBuilderView: View {
     @ObservedObject var passKitManager: PassKitManager
     @Environment(\.dismiss) private var dismiss
@@ -2735,8 +4318,10 @@ struct PassBuilderView: View {
     @State private var showingRegistrationFlow = false
     @State private var createdPassURL: String?
     @State private var showingPointsManager = false
+    @State private var showingImagePicker = false
+    @State private var selectedLogoImage: UIImage?
     
-    // Templates like Walletsio
+    // Available templates
     let templates: [PassTemplate] = [
         PassTemplate(
             id: "loyalty-card",
@@ -2877,6 +4462,13 @@ struct PassBuilderView: View {
             .sheet(isPresented: $showingPointsManager) {
                 PointsManagementView(pointsManager: PointsManager())
             }
+            .sheet(isPresented: $showingImagePicker) {
+                ImagePicker(selectedImage: $selectedLogoImage) {
+                    if let image = selectedLogoImage {
+                        passData.logoImage = image.jpegData(compressionQuality: 0.8)?.base64EncodedString() ?? ""
+                    }
+                }
+            }
         }
     }
     
@@ -3008,22 +4600,51 @@ struct PassBuilderView: View {
                     
                     FormSection(title: "Логотип (опционально)") {
                         VStack(spacing: 12) {
-                            Button {
-                                // Image picker action
-                            } label: {
-                                HStack {
-                                    Image(systemName: "photo.badge.plus")
+                            if let selectedImage = selectedLogoImage {
+                                VStack(spacing: 8) {
+                                    Image(uiImage: selectedImage)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(height: 60)
+                                        .cornerRadius(8)
+                                    
+                                    HStack {
+                                        Button("Изменить") {
+                                            showingImagePicker = true
+                                        }
                                         .foregroundColor(.blue)
-                                    Text("Добавить логотип")
-                                        .foregroundColor(.blue)
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .foregroundColor(.secondary)
-                                        .font(.caption)
+                                        
+                                        Spacer()
+                                        
+                                        Button("Удалить") {
+                                            selectedLogoImage = nil
+                                            passData.logoImage = ""
+                                        }
+                                        .foregroundColor(.red)
+                                    }
+                                    .font(.caption)
                                 }
                                 .padding()
                                 .background(.gray.opacity(0.05))
                                 .cornerRadius(12)
+                            } else {
+                                Button {
+                                    showingImagePicker = true
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "photo.badge.plus")
+                                            .foregroundColor(.blue)
+                                        Text("Добавить логотип")
+                                            .foregroundColor(.blue)
+                                        Spacer()
+                                        Image(systemName: "chevron.right")
+                                            .foregroundColor(.secondary)
+                                            .font(.caption)
+                                    }
+                                    .padding()
+                                    .background(.gray.opacity(0.05))
+                                    .cornerRadius(12)
+                                }
                             }
                         }
                     }
@@ -3712,7 +5333,7 @@ struct InfoRow: View {
     }
 }
 
-// MARK: - Walletsio Style Components
+// MARK: - Template Components
 
 struct TemplateCardView: View {
     let template: PassTemplate
@@ -5713,7 +7334,8 @@ struct WalletStackView: View {
     @State private var isExpanded: Bool = false
     
     let maxVisibleCards = 3
-    let cardSpacing: CGFloat = 8
+    let cardSpacing: CGFloat = 6          // Tighter spacing like real Wallet
+    let stackedCardOffset: CGFloat = 12   // Offset for stacked cards
     let cardHeight: CGFloat = 200
     
     var body: some View {
@@ -5724,7 +7346,11 @@ struct WalletStackView: View {
                 } else {
                     ZStack {
                         ForEach(Array(zip(passKitManager.passes.indices, passKitManager.passes)), id: \.0) { index, pass in
-                            WalletCardView(pass: pass, isSelected: index == selectedCardIndex)
+                            WalletCardView(
+                                pass: pass, 
+                                isSelected: index == selectedCardIndex,
+                                isInStack: !isExpanded && index != selectedCardIndex
+                            )
                                 .frame(height: cardHeight)
                                 .scaleEffect(scaleForCard(at: index))
                                 .offset(y: offsetForCard(at: index))
@@ -5740,6 +7366,11 @@ struct WalletStackView: View {
                                         }
                                     }
                                 }
+                                .accessibilityElement(children: .combine)
+                                .accessibilityLabel("\(pass.organizationName) \(pass.description)")
+                                .accessibilityValue(pass.headerFields.first?.value ?? "")
+                                .accessibilityHint(index == selectedCardIndex ? "Дважды коснитесь для просмотра деталей" : "Коснитесь для выбора карты")
+                                .accessibilityAddTraits(index == selectedCardIndex ? .isSelected : [])
                                 .gesture(
                                     DragGesture()
                                         .onChanged { value in
@@ -5769,6 +7400,17 @@ struct WalletStackView: View {
         }
         .navigationTitle("Wallet")
         .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    // Add new card action
+                } label: {
+                    Image(systemName: "plus.circle")
+                        .font(.title2)
+                        .accessibilityLabel("Добавить новую карту")
+                }
+            }
+        }
     }
     
     private var emptyStateView: some View {
@@ -5848,26 +7490,31 @@ struct WalletStackView: View {
         if distance == 0 {
             return 1.0
         } else if distance <= maxVisibleCards {
-            return 1.0 - (CGFloat(distance) * 0.05)
+            // More subtle scaling like real Apple Wallet
+            return 1.0 - (CGFloat(distance) * 0.03)
         } else {
-            return 0.85
+            return 0.90
         }
     }
     
     private func offsetForCard(at index: Int) -> CGFloat {
         if isExpanded && index == selectedCardIndex {
-            return dragOffset.y
+            return dragOffset.height
         }
         
         let distance = index - selectedCardIndex
+        
         if distance == 0 {
-            return dragOffset.y
+            return dragOffset.height
         } else if distance > 0 && distance <= maxVisibleCards {
-            return CGFloat(distance) * cardSpacing + dragOffset.y
+            // Cards below selected card - stacked with increasing offset
+            return CGFloat(distance) * stackedCardOffset + dragOffset.height
         } else if distance < 0 && abs(distance) <= maxVisibleCards {
-            return CGFloat(distance) * cardSpacing + dragOffset.y
+            // Cards above selected card - smaller offset for peek effect
+            return CGFloat(distance) * cardSpacing + dragOffset.height
         } else {
-            return CGFloat(distance > 0 ? maxVisibleCards : -maxVisibleCards) * cardSpacing
+            // Cards beyond visible range
+            return CGFloat(distance > 0 ? maxVisibleCards : -maxVisibleCards) * stackedCardOffset
         }
     }
     
@@ -5876,7 +7523,8 @@ struct WalletStackView: View {
         if distance == 0 {
             return 1.0
         } else if distance <= maxVisibleCards {
-            return 1.0 - (Double(distance) * 0.2)
+            // More gradual opacity fade
+            return 1.0 - (Double(distance) * 0.15)
         } else {
             return 0.0
         }
@@ -5886,9 +7534,9 @@ struct WalletStackView: View {
         let threshold: CGFloat = 100
         
         withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-            if value.translation.y < -threshold && selectedCardIndex > 0 {
+            if value.translation.height < -threshold && selectedCardIndex > 0 {
                 selectedCardIndex -= 1
-            } else if value.translation.y > threshold && selectedCardIndex < passKitManager.passes.count - 1 {
+            } else if value.translation.height > threshold && selectedCardIndex < passKitManager.passes.count - 1 {
                 selectedCardIndex += 1
             }
             
@@ -5901,60 +7549,138 @@ struct WalletStackView: View {
 struct WalletCardView: View {
     let pass: WalletPassData
     let isSelected: Bool
+    let isInStack: Bool
+    @State private var isFlipped: Bool = false
     
     var body: some View {
         ZStack {
-            // Card Background
+            if isFlipped {
+                // Back of card
+                cardBackView
+                    .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
+            } else {
+                // Front of card
+                cardFrontView
+            }
+        }
+        .rotation3DEffect(.degrees(isFlipped ? 180 : 0), axis: (x: 0, y: 1, z: 0))
+        .onTapGesture(count: 2) {
+            // Double tap to flip card
+            if !isInStack {
+                withAnimation(.spring(response: 0.8, dampingFraction: 0.8)) {
+                    isFlipped.toggle()
+                }
+            }
+        }
+    }
+    
+    private var cardFrontView: some View {
+        ZStack {
+            // Card Background - Vivid colors as per Apple guidelines
+            backgroundGradient
+            
+            if isInStack {
+                // Stack View - Only header fields visible
+                stackHeaderView
+            } else {
+                // Full View - All field hierarchy visible
+                fullCardView
+            }
+        }
+        .cornerRadius(16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
+        )
+        .shadow(
+            color: .black.opacity(isSelected ? 0.4 : 0.2),
+            radius: isSelected ? 12 : 6,
+            x: 0,
+            y: isSelected ? 10 : 5
+        )
+    }
+    
+    private var cardBackView: some View {
+        ZStack {
+            // Back background - darker version of front
             LinearGradient(
-                colors: gradientColors,
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
+                colors: vividGradientColors.map { $0.opacity(0.8) },
+                startPoint: .topTrailing,
+                endPoint: .bottomLeading
             )
             
-            VStack(alignment: .leading, spacing: 12) {
-                // Header
+            VStack(alignment: .leading, spacing: 16) {
+                // Back header
                 HStack {
-                    Text(pass.organizationName)
-                        .font(.headline.bold())
-                        .foregroundColor(.white)
+                    Text("Дополнительная информация")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.9))
                     
                     Spacer()
                     
-                    Image(systemName: passTypeIcon)
-                        .font(.title2)
-                        .foregroundColor(.white)
+                    Button {
+                        withAnimation(.spring(response: 0.8, dampingFraction: 0.8)) {
+                            isFlipped = false
+                        }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.white.opacity(0.7))
+                    }
                 }
                 
                 Spacer()
                 
-                // Card Info
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(pass.description)
-                        .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.9))
-                    
-                    Text(pass.serialNumber)
-                        .font(.caption.monospaced())
-                        .foregroundColor(.white.opacity(0.7))
+                // Back fields
+                if !pass.backFields.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(pass.backFields) { field in
+                            VStack(alignment: .leading, spacing: 4) {
+                                if let label = field.label {
+                                    Text(label.uppercased())
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.6))
+                                }
+                                Text(field.value)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.9))
+                            }
+                        }
+                    }
+                } else {
+                    // Default back content
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Условия использования:")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.9))
+                        
+                        Text("• Карта действительна только при предъявлении\n• Не подлежит обмену на денежные средства\n• Срок действия указан на лицевой стороне")
+                            .font(.system(size: 10, weight: .regular))
+                            .foregroundColor(.white.opacity(0.7))
+                            .lineSpacing(2)
+                    }
                 }
                 
-                // Pass Type Badge
-                HStack {
-                    Text(pass.passType.description)
-                        .font(.caption2.bold())
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(.white.opacity(0.2))
-                        .foregroundColor(.white)
-                        .cornerRadius(4)
+                Spacer()
+                
+                // QR Code section
+                VStack(spacing: 8) {
+                    Text("QR-код для сканирования")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
                     
-                    Spacer()
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(.white)
+                        .frame(width: 80, height: 80)
+                        .overlay(
+                            Image(systemName: "qrcode")
+                                .font(.system(size: 40))
+                                .foregroundColor(.black)
+                        )
                     
-                    if isSelected {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.title3)
-                            .foregroundColor(.white)
-                    }
+                    Text(pass.serialNumber)
+                        .font(.system(size: 8, weight: .medium, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.5))
                 }
             }
             .padding(20)
@@ -5962,91 +7688,971 @@ struct WalletCardView: View {
         .cornerRadius(16)
         .overlay(
             RoundedRectangle(cornerRadius: 16)
-                .stroke(.white.opacity(0.2), lineWidth: 1)
+                .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
         )
         .shadow(
             color: .black.opacity(0.3),
-            radius: isSelected ? 10 : 5,
+            radius: 8,
             x: 0,
-            y: isSelected ? 8 : 4
+            y: 6
         )
     }
     
-    private var gradientColors: [Color] {
+    private var backgroundGradient: some View {
+        LinearGradient(
+            colors: vividGradientColors,
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .overlay(
+            // Subtle pattern overlay for depth
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.1),
+                    Color.clear,
+                    Color.black.opacity(0.1)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+    }
+    
+    private var stackHeaderView: some View {
+        VStack(spacing: 0) {
+            // Logo/Organization area - always visible in stack
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    if let logoText = pass.logoText {
+                        Text(logoText)
+                            .font(.system(.footnote, design: .default, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    
+                    // Header fields - most important info visible in stack
+                    ForEach(pass.headerFields.prefix(1)) { field in
+                        if let label = field.label {
+                            Text(label.uppercased())
+                                .font(.system(.caption2, design: .default, weight: .medium))
+                                .foregroundColor(.white.opacity(0.7))
+                        }
+                        Text(field.value)
+                            .font(.system(.body, design: .default, weight: .bold))
+                            .foregroundColor(.white)
+                            .dynamicTypeSize(.medium ... .accessibility2)
+                    }
+                }
+                
+                Spacer()
+                
+                // Pass type icon
+                Image(systemName: passTypeIcon)
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundColor(.white.opacity(0.9))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            
+            Spacer()
+        }
+    }
+    
+    private var fullCardView: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Header section with logo
+            headerSection
+            
+            Spacer()
+            
+            // Primary fields - most prominent
+            if !pass.primaryFields.isEmpty {
+                primaryFieldsSection
+            }
+            
+            // Secondary and auxiliary fields
+            bottomFieldsSection
+        }
+        .padding(20)
+    }
+    
+    private var headerSection: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                if let logoText = pass.logoText {
+                    Text(logoText)
+                        .font(.system(.subheadline, design: .default, weight: .semibold))
+                        .foregroundColor(.white)
+                        .dynamicTypeSize(.medium ... .accessibility1)
+                }
+                
+                Text(pass.description)
+                    .font(.system(.caption, design: .default, weight: .medium))
+                    .foregroundColor(.white.opacity(0.8))
+                    .dynamicTypeSize(.medium ... .accessibility1)
+            }
+            
+            Spacer()
+            
+            VStack(alignment: .trailing, spacing: 4) {
+                Image(systemName: passTypeIcon)
+                    .font(.system(size: 24, weight: .medium))
+                    .foregroundColor(.white)
+                
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(.white)
+                }
+            }
+        }
+    }
+    
+    private var primaryFieldsSection: some View {
+        HStack(spacing: 20) {
+            ForEach(pass.primaryFields.prefix(2)) { field in
+                VStack(alignment: .leading, spacing: 2) {
+                    if let label = field.label {
+                        Text(label.uppercased())
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                    Text(field.value)
+                        .font(.system(size: 20, weight: .bold, design: .default))
+                        .foregroundColor(.white)
+                        .minimumScaleFactor(0.8)
+                }
+                
+                if field.id != pass.primaryFields.prefix(2).last?.id {
+                    Spacer()
+                }
+            }
+        }
+    }
+    
+    private var bottomFieldsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Secondary fields
+            if !pass.secondaryFields.isEmpty {
+                HStack(spacing: 16) {
+                    ForEach(pass.secondaryFields.prefix(3)) { field in
+                        VStack(alignment: .leading, spacing: 2) {
+                            if let label = field.label {
+                                Text(label.uppercased())
+                                    .font(.system(size: 9, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.6))
+                            }
+                            Text(field.value)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.white.opacity(0.9))
+                        }
+                        
+                        if field.id != pass.secondaryFields.prefix(3).last?.id {
+                            Spacer()
+                        }
+                    }
+                }
+            }
+            
+            // Auxiliary fields (smallest)
+            if !pass.auxiliaryFields.isEmpty {
+                HStack(spacing: 12) {
+                    ForEach(pass.auxiliaryFields.prefix(4)) { field in
+                        VStack(alignment: .leading, spacing: 1) {
+                            if let label = field.label {
+                                Text(label.uppercased())
+                                    .font(.system(size: 8, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.5))
+                            }
+                            Text(field.value)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.white.opacity(0.8))
+                        }
+                        
+                        if field.id != pass.auxiliaryFields.prefix(4).last?.id {
+                            Spacer()
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Vivid gradient colors as per Apple Wallet guidelines
+    private var vividGradientColors: [Color] {
         switch pass.passType {
         case .storeCard:
-            return [.blue, .purple]
+            return [
+                Color(red: 0.0, green: 0.4, blue: 0.8),      // Deep Blue
+                Color(red: 0.3, green: 0.0, blue: 0.8),      // Deep Purple
+                Color(red: 0.0, green: 0.2, blue: 0.6)       // Navy
+            ]
         case .coupon:
-            return [.orange, .red]
+            return [
+                Color(red: 1.0, green: 0.3, blue: 0.0),      // Vivid Orange
+                Color(red: 0.9, green: 0.0, blue: 0.2),      // Deep Red
+                Color(red: 0.8, green: 0.1, blue: 0.4)       // Magenta
+            ]
         case .eventTicket:
-            return [.green, .teal]
+            return [
+                Color(red: 0.0, green: 0.6, blue: 0.3),      // Forest Green
+                Color(red: 0.0, green: 0.8, blue: 0.6),      // Teal
+                Color(red: 0.0, green: 0.4, blue: 0.7)       // Ocean Blue
+            ]
         case .boardingPass:
-            return [.indigo, .blue]
+            return [
+                Color(red: 0.1, green: 0.2, blue: 0.6),      // Deep Blue
+                Color(red: 0.0, green: 0.4, blue: 0.8),      // Sky Blue
+                Color(red: 0.2, green: 0.0, blue: 0.5)       // Indigo
+            ]
         case .generic:
-            return [.gray, .black]
+            return [
+                Color(red: 0.2, green: 0.2, blue: 0.2),      // Dark Gray
+                Color(red: 0.1, green: 0.1, blue: 0.1),      // Almost Black
+                Color(red: 0.3, green: 0.3, blue: 0.3)       // Medium Gray
+            ]
         }
     }
     
     private var passTypeIcon: String {
         switch pass.passType {
         case .storeCard:
-            return "creditcard"
+            return "creditcard.fill"
         case .coupon:
             return "percent"
         case .eventTicket:
-            return "ticket"
+            return "ticket.fill"
         case .boardingPass:
             return "airplane"
         case .generic:
-            return "doc"
+            return "doc.fill"
         }
     }
 }
 
-// MARK: - Enhanced ContentView with Wallet Integration
+// MARK: - Image Picker
 
-struct ContentView: View {
-    @State private var selectedTab = 0
-    @StateObject private var companyManager = CompanyManager()
-    @StateObject private var passKitManager = PassKitManager()
+struct ImagePicker: UIViewControllerRepresentable {
+    @Binding var selectedImage: UIImage?
+    @Environment(\.dismiss) private var dismiss
+    let onImageSelected: () -> Void
+    
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.delegate = context.coordinator
+        picker.sourceType = .photoLibrary
+        picker.allowsEditing = true
+        return picker
+    }
+    
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: ImagePicker
+        
+        init(_ parent: ImagePicker) {
+            self.parent = parent
+        }
+        
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            if let editedImage = info[.editedImage] as? UIImage {
+                parent.selectedImage = editedImage
+            } else if let originalImage = info[.originalImage] as? UIImage {
+                parent.selectedImage = originalImage
+            }
+            
+            parent.onImageSelected()
+            parent.dismiss()
+        }
+        
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            parent.dismiss()
+        }
+    }
+}
+
+// MARK: - Program Analytics View
+
+struct ProgramAnalyticsView: View {
+    let program: LoyaltyProgram
+    @Environment(\.dismiss) private var dismiss
     
     var body: some View {
-        TabView(selection: $selectedTab) {
-            // Wallet Tab
-            NavigationView {
-                WalletStackView()
+        NavigationView {
+            ScrollView {
+                LazyVStack(spacing: 20) {
+                    // Основная статистика
+                    analyticsOverviewSection
+                    
+                    // Пользователи
+                    usersAnalyticsSection
+                    
+                    // Транзакции баллов
+                    pointsTransactionsSection
+                    
+                    // Активность по времени
+                    timeActivitySection
+                }
+                .padding()
             }
-            .tabItem {
-                Image(systemName: "wallet.pass")
-                Text("Wallet")
+            .navigationTitle("Аналитика: \(program.name)")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Готово") {
+                        dismiss()
+                    }
+                }
             }
-            .tag(0)
-            
-            // Admin Panel Tab
-            NavigationView {
-                AdminDashboardView()
-                    .environmentObject(companyManager)
-            }
-            .tabItem {
-                Image(systemName: "person.badge.key")
-                Text("Admin")
-            }
-            .tag(1)
-            
-            // Scanner Tab
-            NavigationView {
-                ScannerView()
-            }
-            .tabItem {
-                Image(systemName: "qrcode.viewfinder")
-                Text("Scanner")
-            }
-            .tag(2)
         }
-        .accentColor(.blue)
+    }
+    
+    private var analyticsOverviewSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Обзор")
+                .font(.headline)
+            
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                AnalyticsCard(
+                    title: "Всего пользователей",
+                    value: "\(program.users.count)",
+                    icon: "person.2.fill",
+                    color: .blue
+                )
+                
+                AnalyticsCard(
+                    title: "Активные карты",
+                    value: "\(program.users.filter { $0.points > 0 }.count)",
+                    icon: "creditcard.fill",
+                    color: .green
+                )
+                
+                AnalyticsCard(
+                    title: "Всего баллов",
+                    value: "\(program.users.reduce(0) { $0 + $1.points })",
+                    icon: "star.fill",
+                    color: .orange
+                )
+                
+                AnalyticsCard(
+                    title: "Средний баланс",
+                    value: program.users.isEmpty ? "0" : "\(program.users.reduce(0) { $0 + $1.points } / program.users.count)",
+                    icon: "chart.bar.fill",
+                    color: .purple
+                )
+            }
+        }
+    }
+    
+    private var usersAnalyticsSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Пользователи")
+                .font(.headline)
+            
+            if program.users.isEmpty {
+                emptyUsersView
+            } else {
+                LazyVStack(spacing: 8) {
+                    ForEach(program.users.prefix(5)) { user in
+                        UserAnalyticsRow(user: user)
+                    }
+                    
+                    if program.users.count > 5 {
+                        Button("Показать всех (\(program.users.count))") {
+                            // Действие для показа всех пользователей
+                        }
+                        .foregroundColor(.blue)
+                    }
+                }
+            }
+        }
+    }
+    
+    private var pointsTransactionsSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Транзакции баллов")
+                .font(.headline)
+            
+            // Здесь можно добавить график или список последних транзакций
+            Text("Функция в разработке")
+                .foregroundColor(.secondary)
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(.gray.opacity(0.1))
+                .cornerRadius(8)
+        }
+    }
+    
+    private var timeActivitySection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Активность по времени")
+                .font(.headline)
+            
+            // Здесь можно добавить график активности
+            Text("График активности в разработке")
+                .foregroundColor(.secondary)
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(.gray.opacity(0.1))
+                .cornerRadius(8)
+        }
+    }
+    
+    private var emptyUsersView: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "person.2.slash")
+                .font(.system(size: 40))
+                .foregroundColor(.gray)
+            
+            Text("Пока нет пользователей")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .frame(maxWidth: .infinity)
+        .background(.gray.opacity(0.1))
+        .cornerRadius(8)
     }
 }
 
-#Preview {
-    ContentView()
+struct AnalyticsCard: View {
+    let title: String
+    let value: String
+    let icon: String
+    let color: Color
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: icon)
+                    .foregroundColor(color)
+                Spacer()
+                Text(value)
+                    .font(.title2.bold())
+                    .foregroundColor(color)
+            }
+            
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .background(.white)
+        .cornerRadius(12)
+        .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
+    }
+}
+
+struct UserAnalyticsRow: View {
+    let user: User
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(user.name)
+                    .font(.subheadline.bold())
+                
+                Text("Регистрация: \(formattedDate(user.registeredAt))")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            VStack(alignment: .trailing, spacing: 4) {
+                Text("\(user.points)")
+                    .font(.subheadline.bold())
+                    .foregroundColor(.blue)
+                
+                Text("баллов")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding()
+        .background(.gray.opacity(0.05))
+        .cornerRadius(8)
+    }
+    
+    private func formattedDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        return formatter.string(from: date)
+    }
+}
+
+// MARK: - Edit Loyalty Program View
+
+struct EditLoyaltyProgramView: View {
+    let program: LoyaltyProgram
+    @Environment(\.dismiss) private var dismiss
+    
+    @State private var programName: String
+    @State private var programDescription: String
+    @State private var pointsPerPurchase: Int
+    @State private var rewardThreshold: Int
+    
+    init(program: LoyaltyProgram) {
+        self.program = program
+        _programName = State(initialValue: program.name)
+        _programDescription = State(initialValue: "Описание программы \(program.name)")
+        _pointsPerPurchase = State(initialValue: 1)
+        _rewardThreshold = State(initialValue: 100)
+    }
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("Основная информация") {
+                    TextField("Название программы", text: $programName)
+                    TextField("Описание", text: $programDescription, axis: .vertical)
+                        .lineLimit(3...6)
+                }
+                
+                Section("Настройки баллов") {
+                    HStack {
+                        Text("Баллов за покупку")
+                        Spacer()
+                        TextField("0", value: $pointsPerPurchase, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 80)
+                    }
+                    
+                    HStack {
+                        Text("Порог для награды")
+                        Spacer()
+                        TextField("0", value: $rewardThreshold, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 80)
+                    }
+                }
+                
+                Section("Дополнительные настройки") {
+                    Toggle("Автоматическое начисление баллов", isOn: .constant(true))
+                    Toggle("Уведомления о новых баллах", isOn: .constant(true))
+                    Toggle("Экспирация баллов", isOn: .constant(false))
+                }
+                
+                Section("Статистика") {
+                    HStack {
+                        Text("Всего пользователей")
+                        Spacer()
+                        Text("\(program.users.count)")
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    HStack {
+                        Text("Активные карты")
+                        Spacer()
+                        Text("\(program.users.filter { $0.points > 0 }.count)")
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    HStack {
+                        Text("Дата создания")
+                        Spacer()
+                        Text(formattedDate(program.createdAt))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("Редактировать программу")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Отмена") {
+                        dismiss()
+                    }
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Сохранить") {
+                        saveProgram()
+                    }
+                    .disabled(programName.isEmpty)
+                }
+            }
+        }
+    }
+    
+    private func saveProgram() {
+        // Здесь будет логика сохранения изменений программы
+        dismiss()
+    }
+    
+    private func formattedDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter.string(from: date)
+    }
+}
+
+// MARK: - Filter Components
+
+struct FilterChip: View {
+    let title: String
+    let isSelected: Bool
+    
+    var body: some View {
+        Text(title)
+            .font(.caption)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(isSelected ? .blue : .gray.opacity(0.2))
+            .foregroundColor(isSelected ? .white : .primary)
+            .cornerRadius(16)
+    }
+}
+
+// MARK: - Edit Pass View
+
+struct EditPassView: View {
+    let passData: WalletPassData
+    @ObservedObject var passKitManager: PassKitManager
+    @Environment(\.dismiss) private var dismiss
+    
+    @State private var organizationName: String
+    @State private var description: String
+    @State private var passType: PassType
+    @State private var backgroundColor: Color
+    @State private var foregroundColor: Color
+    
+    init(passData: WalletPassData, passKitManager: PassKitManager) {
+        self.passData = passData
+        self.passKitManager = passKitManager
+        _organizationName = State(initialValue: passData.organizationName)
+        _description = State(initialValue: passData.description)
+        _passType = State(initialValue: passData.passType)
+        _backgroundColor = State(initialValue: Color.fromRGBString(passData.backgroundColor))
+        _foregroundColor = State(initialValue: Color.fromRGBString(passData.foregroundColor))
+    }
+    
+    var body: some View {
+        NavigationView {
+            List {
+                Section("Основная информация") {
+                    TextField("Название организации", text: $organizationName)
+                    TextField("Описание", text: $description, axis: .vertical)
+                        .lineLimit(3...6)
+                }
+                
+                Section("Тип пасса") {
+                    Picker("Тип пасса", selection: $passType) {
+                        ForEach(PassType.allCases, id: \.self) { type in
+                            HStack {
+                                Image(systemName: type.icon)
+                                Text(type.displayName)
+                            }
+                            .tag(type)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+                
+                Section("Дизайн") {
+                    ColorPicker("Цвет фона", selection: $backgroundColor)
+                    ColorPicker("Цвет текста", selection: $foregroundColor)
+                }
+                
+                Section("Информация о пассе") {
+                    HStack {
+                        Text("Серийный номер")
+                        Spacer()
+                        Text(passData.serialNumber)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    HStack {
+                        Text("Дата создания")
+                        Spacer()
+                        Text(formattedDate(passData.createdAt))
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    HStack {
+                        Text("Статус")
+                        Spacer()
+                        Text("Активен")
+                            .foregroundColor(.green)
+                    }
+                }
+                
+                Section("Предпросмотр") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Image(systemName: passType.icon)
+                                .foregroundColor(.white)
+                                .font(.title2)
+                            
+                            VStack(alignment: .leading) {
+                                Text(organizationName.isEmpty ? "Организация" : organizationName)
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                Text(description.isEmpty ? "Описание" : description)
+                                    .font(.subheadline)
+                                    .foregroundColor(.white.opacity(0.8))
+                            }
+                            
+                            Spacer()
+                        }
+                        
+                        HStack {
+                            Text("Дата создания: \(formattedDate(passData.createdAt))")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.7))
+                            Spacer()
+                        }
+                    }
+                    .padding()
+                    .background(backgroundColor.gradient)
+                    .cornerRadius(12)
+                }
+            }
+            .navigationTitle("Редактировать пасс")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Отмена") {
+                        dismiss()
+                    }
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Сохранить") {
+                        saveChanges()
+                    }
+                    .disabled(organizationName.isEmpty || description.isEmpty)
+                }
+            }
+        }
+    }
+    
+    private func saveChanges() {
+        // В реальном приложении здесь будет логика сохранения изменений
+        print("Сохранение изменений пасса: \(organizationName)")
+        dismiss()
+    }
+    
+    private func formattedDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter.string(from: date)
+    }
+}
+
+
+
+// MARK: - Quick Pass Creator For Specific Type
+struct QuickPassCreatorForType: View {
+    @ObservedObject var passKitManager: PassKitManager
+    let passType: PassType?
+    @Environment(\.dismiss) private var dismiss
+    
+    @State private var organizationName = ""
+    @State private var description = ""
+    @State private var selectedColor: Color = .blue
+    @State private var isCreating = false
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Header
+                    VStack(spacing: 8) {
+                        Image(systemName: passType?.icon ?? "creditcard")
+                            .font(.system(size: 50))
+                            .foregroundColor(selectedColor)
+                        
+                        Text("Быстрое создание")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        
+                        Text(passType?.displayName ?? "Пасс")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.top)
+                    
+                    // Form
+                    VStack(spacing: 16) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Название организации")
+                                .font(.headline)
+                            TextField("Введите название", text: $organizationName)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Описание")
+                                .font(.headline)
+                            TextField("Краткое описание пасса", text: $description)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Цвет")
+                                .font(.headline)
+                            
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 12) {
+                                ForEach([Color.blue, .green, .orange, .purple, .red, .pink, .indigo, .teal], id: \.self) { color in
+                                    Circle()
+                                        .fill(color)
+                                        .frame(width: 44, height: 44)
+                                        .overlay(
+                                            Circle()
+                                                .stroke(.white, lineWidth: selectedColor == color ? 3 : 0)
+                                        )
+                                        .onTapGesture {
+                                            selectedColor = color
+                                        }
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(.ultraThinMaterial)
+                    .cornerRadius(16)
+                    
+                    // Preview
+                    if !organizationName.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Предпросмотр")
+                                .font(.headline)
+                            
+                            QuickPassPreviewCard(
+                                organizationName: organizationName,
+                                description: description.isEmpty ? (passType?.defaultDescription ?? "Пасс") : description,
+                                color: selectedColor,
+                                passType: passType ?? .generic
+                            )
+                        }
+                        .padding()
+                        .background(.ultraThinMaterial)
+                        .cornerRadius(16)
+                    }
+                    
+                    Spacer(minLength: 20)
+                }
+                .padding()
+            }
+            .navigationTitle("Новый пасс")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Отмена") {
+                        dismiss()
+                    }
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Создать") {
+                        createPass()
+                    }
+                    .disabled(organizationName.isEmpty || isCreating)
+                    .fontWeight(.semibold)
+                }
+            }
+        }
+    }
+    
+    private func createPass() {
+        guard let passType = passType else { return }
+        
+        isCreating = true
+        
+        let passData = WalletPassData(
+            passType: passType,
+            organizationName: organizationName,
+            description: description.isEmpty ? passType.defaultDescription : description,
+            serialNumber: "LY\(String(format: "%06d", Int.random(in: 100000...999999)))"
+        )
+        
+        // Add to PassKit manager
+        passKitManager.passes.append(passData)
+        
+        // Success feedback
+        let notificationFeedback = UINotificationFeedbackGenerator()
+        notificationFeedback.notificationOccurred(.success)
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            isCreating = false
+            dismiss()
+        }
+    }
+}
+
+struct QuickPassPreviewCard: View {
+    let organizationName: String
+    let description: String
+    let color: Color
+    let passType: PassType
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: passType.icon)
+                    .foregroundColor(.white)
+                    .font(.title2)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(organizationName)
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                    
+                    Text(description)
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.8))
+                        .lineLimit(1)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "qrcode")
+                    .foregroundColor(.white.opacity(0.7))
+                    .font(.title2)
+            }
+            
+            Divider()
+                .background(.white.opacity(0.3))
+            
+            HStack {
+                Text("Серийный номер")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.7))
+                
+                Spacer()
+                
+                Text("LY######")
+                    .font(.caption.monospaced())
+                    .foregroundColor(.white.opacity(0.7))
+            }
+        }
+        .padding()
+        .background(
+            LinearGradient(
+                colors: [color, color.opacity(0.8)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .cornerRadius(12)
+        .shadow(radius: 8)
+    }
+}
+
+// MARK: - PassType Extensions
+extension PassType {
+    var defaultDescription: String {
+        switch self {
+        case .coupon: return "Скидочный купон"
+        case .storeCard: return "Карта магазина"  
+        case .eventTicket: return "Билет на мероприятие"
+        case .boardingPass: return "Посадочный талон"
+        case .generic: return "Универсальный пасс"
+        }
+    }
 }
