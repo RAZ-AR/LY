@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LY Backend API Tester</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }
+        .endpoint { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .method { padding: 5px 10px; border-radius: 3px; color: white; font-weight: bold; }
+        .get { background: #28a745; }
+        .post { background: #007bff; }
+        button { padding: 10px 15px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .result { margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 5px; }
+        .error { background: #f8d7da; border: 1px solid #f5c6cb; }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; }
+        pre { white-space: pre-wrap; word-wrap: break-word; }
+        .status { font-weight: bold; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 LY Backend API Tester</h1>
+        <p>Тестирование API endpoints без командной строки</p>
+        
+        <div class="endpoint">
+            <h3><span class="method get">GET</span> Health Check</h3>
+            <p>Проверка работы сервера</p>
+            <button onclick="testEndpoint('GET', '/health', null, 'health-result')">Тест</button>
+            <div id="health-result" class="result" style="display:none;"></div>
+        </div>
+        
+        <div class="endpoint">
+            <h3><span class="method get">GET</span> Companies</h3>
+            <p>Получить список всех компаний</p>
+            <button onclick="testEndpoint('GET', '/api/v1/companies', null, 'companies-result')">Тест</button>
+            <div id="companies-result" class="result" style="display:none;"></div>
+        </div>
+        
+        <div class="endpoint">
+            <h3><span class="method post">POST</span> Create Company</h3>
+            <p>Создать новую компанию</p>
+            <div style="margin: 10px 0;">
+                <input type="text" id="company-name" placeholder="Название компании" style="padding: 5px; margin-right: 10px;">
+                <input type="email" id="company-email" placeholder="Email администратора" style="padding: 5px;">
+            </div>
+            <button onclick="createCompany()">Создать</button>
+            <div id="create-company-result" class="result" style="display:none;"></div>
+        </div>
+        
+        <div class="endpoint">
+            <h3><span class="method get">GET</span> Users</h3>
+            <p>Получить список всех пользователей</p>
+            <button onclick="testEndpoint('GET', '/api/v1/users', null, 'users-result')">Тест</button>
+            <div id="users-result" class="result" style="display:none;"></div>
+        </div>
+        
+        <div class="endpoint">
+            <h3><span class="method post">POST</span> Create User</h3>
+            <p>Создать нового пользователя</p>
+            <div style="margin: 10px 0;">
+                <input type="text" id="user-name" placeholder="Имя пользователя" style="padding: 5px; margin-right: 10px;">
+                <input type="email" id="user-email" placeholder="Email" style="padding: 5px; margin-right: 10px;">
+                <input type="tel" id="user-phone" placeholder="Телефон" style="padding: 5px;">
+            </div>
+            <button onclick="createUser()">Создать</button>
+            <div id="create-user-result" class="result" style="display:none;"></div>
+        </div>
+        
+        <div class="endpoint">
+            <h3><span class="method get">GET</span> Analytics</h3>
+            <p>Получить аналитику и статистику</p>
+            <button onclick="testEndpoint('GET', '/api/v1/analytics/dashboard', null, 'analytics-result')">Тест</button>
+            <div id="analytics-result" class="result" style="display:none;"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3000';
+        
+        async function testEndpoint(method, path, data, resultId) {
+            const resultDiv = document.getElementById(resultId);
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = '<div class="status">⏳ Отправка запроса...</div>';
+            
+            try {
+                const options = {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                };
+                
+                if (data) {
+                    options.body = JSON.stringify(data);
+                }
+                
+                const response = await fetch(API_BASE + path, options);
+                const result = await response.json();
+                
+                resultDiv.className = response.ok ? 'result success' : 'result error';
+                resultDiv.innerHTML = `
+                    <div class="status">Status: ${response.status} ${response.statusText}</div>
+                    <pre>${JSON.stringify(result, null, 2)}</pre>
+                `;
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `
+                    <div class="status">❌ Ошибка соединения</div>
+                    <pre>${error.message}</pre>
+                    <p><strong>Возможные причины:</strong></p>
+                    <ul>
+                        <li>Сервер не запущен (выполните: npm run dev)</li>
+                        <li>Неверный порт (проверьте: http://localhost:3000)</li>
+                        <li>CORS ограничения</li>
+                    </ul>
+                `;
+            }
+        }
+        
+        function createCompany() {
+            const name = document.getElementById('company-name').value;
+            const email = document.getElementById('company-email').value;
+            
+            if (!name || !email) {
+                alert('Заполните все поля');
+                return;
+            }
+            
+            const data = {
+                name: name,
+                adminEmail: email
+            };
+            
+            testEndpoint('POST', '/api/v1/companies', data, 'create-company-result');
+        }
+        
+        function createUser() {
+            const name = document.getElementById('user-name').value;
+            const email = document.getElementById('user-email').value;
+            const phone = document.getElementById('user-phone').value;
+            
+            if (!name || (!email && !phone)) {
+                alert('Заполните имя и либо email, либо телефон');
+                return;
+            }
+            
+            const data = {
+                name: name,
+                email: email || null,
+                phone: phone || null
+            };
+            
+            testEndpoint('POST', '/api/v1/users', data, 'create-user-result');
+        }
+        
+        // Автоматическая проверка health при загрузке
+        window.onload = function() {
+            testEndpoint('GET', '/health', null, 'health-result');
+        };
+    </script>
+</body>
+</html>
