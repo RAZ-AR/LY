@@ -34,22 +34,24 @@ const upload = multer({
 // GET all passes
 router.get('/', async (req, res) => {
   try {
-    const { companyId, loyaltyProgramId } = req.query;
+    const { companyId, loyaltyProgramId, passType, userId } = req.query;
     
-    let filteredPasses = passesData;
+    const filters = {};
+    if (companyId) filters.companyId = companyId;
+    if (loyaltyProgramId) filters.loyaltyProgramId = loyaltyProgramId;
+    if (passType) filters.passType = passType;
     
-    if (companyId) {
-      filteredPasses = filteredPasses.filter(pass => pass.companyId === companyId);
-    }
-    
-    if (loyaltyProgramId) {
-      filteredPasses = filteredPasses.filter(pass => pass.loyaltyProgramId === loyaltyProgramId);
+    let passes;
+    if (userId) {
+      passes = await WalletPass.findByUserId(userId);
+    } else {
+      passes = await WalletPass.findAll(filters);
     }
 
     res.json({
       success: true,
-      data: filteredPasses,
-      count: filteredPasses.length
+      data: passes,
+      count: passes.length
     });
   } catch (error) {
     res.status(500).json({
@@ -64,13 +66,21 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const pass = passesData.find(p => p.id === id);
+    const pass = await WalletPass.findById(id);
     
     if (!pass) {
       return res.status(404).json({
         success: false,
         error: 'Pass not found'
       });
+    }
+
+    // Парсим JSON поля если они есть
+    if (typeof pass.fields === 'string') {
+      pass.fields = JSON.parse(pass.fields);
+    }
+    if (typeof pass.barcodes === 'string') {
+      pass.barcodes = JSON.parse(pass.barcodes);
     }
 
     res.json({
@@ -89,27 +99,27 @@ router.get('/:id', async (req, res) => {
 // POST create new pass
 router.post('/', upload.single('logo'), async (req, res) => {
   try {
-    const passData = JSON.parse(req.body.passData || '{}');
+    // Парсим данные пасса из тела запроса
+    let passData;
+    if (req.body.passData) {
+      passData = typeof req.body.passData === 'string' 
+        ? JSON.parse(req.body.passData) 
+        : req.body.passData;
+    } else {
+      passData = req.body;
+    }
     
-    const newPass = {
-      id: uuidv4(),
-      passTypeIdentifier: passData.passTypeIdentifier || `pass.com.ly.${uuidv4()}`,
-      organizationName: passData.organizationName,
-      description: passData.description,
-      serialNumber: passData.serialNumber || uuidv4(),
-      passType: passData.passType || 'storeCard',
-      backgroundColor: passData.backgroundColor || '#1976D2',
-      foregroundColor: passData.foregroundColor || '#FFFFFF',
-      fields: passData.fields || {},
-      barcodes: passData.barcodes || [],
-      logo: req.file ? req.file.filename : null,
-      companyId: passData.companyId,
-      loyaltyProgramId: passData.loyaltyProgramId,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
+    // Добавляем путь к загруженному файлу
+    if (req.file) {
+      passData.logo = req.file.filename;
+    }
     
-    passesData.push(newPass);
+    // Генерируем passTypeIdentifier если не предоставлен
+    if (!passData.passTypeIdentifier) {
+      passData.passTypeIdentifier = `pass.com.ly.${uuidv4()}`;
+    }
+    
+    const newPass = await WalletPass.create(passData);
     
     res.status(201).json({
       success: true,
@@ -129,32 +139,30 @@ router.post('/', upload.single('logo'), async (req, res) => {
 router.put('/:id', upload.single('logo'), async (req, res) => {
   try {
     const { id } = req.params;
-    const passIndex = passesData.findIndex(p => p.id === id);
     
-    if (passIndex === -1) {
+    // Парсим данные пасса
+    let passData;
+    if (req.body.passData) {
+      passData = typeof req.body.passData === 'string' 
+        ? JSON.parse(req.body.passData) 
+        : req.body.passData;
+    } else {
+      passData = req.body;
+    }
+    
+    // Добавляем путь к новому файлу если загружен
+    if (req.file) {
+      passData.logo = req.file.filename;
+    }
+    
+    const updatedPass = await WalletPass.update(id, passData);
+    
+    if (!updatedPass) {
       return res.status(404).json({
         success: false,
         error: 'Pass not found'
       });
     }
-
-    const passData = JSON.parse(req.body.passData || '{}');
-    const existingPass = passesData[passIndex];
-    
-    const updatedPass = {
-      ...existingPass,
-      organizationName: passData.organizationName || existingPass.organizationName,
-      description: passData.description || existingPass.description,
-      passType: passData.passType || existingPass.passType,
-      backgroundColor: passData.backgroundColor || existingPass.backgroundColor,
-      foregroundColor: passData.foregroundColor || existingPass.foregroundColor,
-      fields: passData.fields || existingPass.fields,
-      barcodes: passData.barcodes || existingPass.barcodes,
-      logo: req.file ? req.file.filename : existingPass.logo,
-      updatedAt: new Date().toISOString()
-    };
-    
-    passesData[passIndex] = updatedPass;
 
     res.json({
       success: true,
@@ -174,7 +182,7 @@ router.put('/:id', upload.single('logo'), async (req, res) => {
 router.get('/:id/download', async (req, res) => {
   try {
     const { id } = req.params;
-    const pass = passesData.find(p => p.id === id);
+    const pass = await WalletPass.findById(id);
     
     if (!pass) {
       return res.status(404).json({
@@ -186,7 +194,7 @@ router.get('/:id/download', async (req, res) => {
     // In production, this would generate actual .pkpass file
     // For now, we return the pass data as JSON
     res.setHeader('Content-Type', 'application/vnd.apple.pkpass');
-    res.setHeader('Content-Disposition', `attachment; filename="${pass.organizationName}-${pass.id}.pkpass"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${pass.organization_name}-${pass.id}.pkpass"`);
     
     // This is a mock implementation - real PassKit generation would require
     // Apple certificates and proper signing
@@ -208,16 +216,14 @@ router.get('/:id/download', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const passIndex = passesData.findIndex(p => p.id === id);
+    const deleted = await WalletPass.delete(id);
     
-    if (passIndex === -1) {
+    if (!deleted) {
       return res.status(404).json({
         success: false,
         error: 'Pass not found'
       });
     }
-
-    passesData.splice(passIndex, 1);
 
     res.json({
       success: true,
@@ -227,6 +233,53 @@ router.delete('/:id', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to delete pass',
+      message: error.message
+    });
+  }
+});
+
+// POST assign pass to user
+router.post('/:id/assign', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required'
+      });
+    }
+    
+    const result = await WalletPass.assignToUser(id, userId);
+    
+    res.json({
+      success: true,
+      data: result,
+      message: 'Pass assigned to user successfully'
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: 'Failed to assign pass to user',
+      message: error.message
+    });
+  }
+});
+
+// GET passes stats
+router.get('/stats/overview', async (req, res) => {
+  try {
+    const stats = await WalletPass.getStats();
+    
+    res.json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get pass statistics',
       message: error.message
     });
   }

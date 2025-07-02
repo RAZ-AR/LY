@@ -33,7 +33,18 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const program = await LoyaltyProgram.findById(id);
+    const { includeDetails } = req.query;
+    
+    let program;
+    if (includeDetails === 'true') {
+      program = await LoyaltyProgram.getWithDetails(id);
+    } else {
+      program = await LoyaltyProgram.findById(id);
+      if (program) {
+        const usersCount = await LoyaltyProgram.getUsersCount(id);
+        program.usersCount = usersCount;
+      }
+    }
     
     if (!program) {
       return res.status(404).json({
@@ -42,15 +53,9 @@ router.get('/:id', async (req, res) => {
       });
     }
 
-    // Get users count
-    const usersCount = await LoyaltyProgram.getUsersCount(id);
-
     res.json({
       success: true,
-      data: {
-        ...program,
-        usersCount
-      }
+      data: program
     });
   } catch (error) {
     res.status(500).json({

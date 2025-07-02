@@ -75,6 +75,36 @@ class LoyaltyProgram {
     
     return parseInt(result.count);
   }
+
+  static async getWithDetails(id) {
+    const program = await this.findById(id);
+    if (!program) return null;
+
+    // Получаем пользователей программы
+    const users = await db('users')
+      .join('loyalty_program_users', 'users.id', 'loyalty_program_users.user_id')
+      .where('loyalty_program_users.loyalty_program_id', id)
+      .select('users.*', 'loyalty_program_users.joined_at')
+      .orderBy('loyalty_program_users.joined_at', 'desc');
+
+    // Получаем пассы программы
+    const walletPasses = await db('wallet_passes')
+      .where('loyalty_program_id', id)
+      .select('*')
+      .orderBy('created_at', 'desc');
+
+    return {
+      ...program,
+      users,
+      walletPasses,
+      stats: {
+        totalUsers: users.length,
+        totalWalletPasses: walletPasses.length,
+        totalPoints: users.reduce((sum, user) => sum + user.points, 0),
+        averagePoints: users.length > 0 ? Math.round(users.reduce((sum, user) => sum + user.points, 0) / users.length) : 0
+      }
+    };
+  }
 }
 
 module.exports = LoyaltyProgram;

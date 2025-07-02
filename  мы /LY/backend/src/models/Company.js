@@ -57,9 +57,47 @@ class Company {
       .where('company_id', id)
       .select('*');
 
+    // Получаем пассы для компании
+    const walletPasses = await db('wallet_passes')
+      .where('company_id', id)
+      .select('*');
+
     return {
       ...company,
-      loyaltyPrograms
+      loyaltyPrograms,
+      walletPasses,
+      stats: {
+        totalLoyaltyPrograms: loyaltyPrograms.length,
+        totalWalletPasses: walletPasses.length
+      }
+    };
+  }
+
+  static async getStats(id) {
+    const company = await this.findById(id);
+    if (!company) return null;
+
+    const loyaltyProgramsCount = await db('loyalty_programs')
+      .where('company_id', id)
+      .count('id as count')
+      .first();
+
+    const walletPassesCount = await db('wallet_passes')
+      .where('company_id', id)
+      .count('id as count')
+      .first();
+
+    const usersCount = await db('users')
+      .join('loyalty_program_users', 'users.id', 'loyalty_program_users.user_id')
+      .join('loyalty_programs', 'loyalty_program_users.loyalty_program_id', 'loyalty_programs.id')
+      .where('loyalty_programs.company_id', id)
+      .countDistinct('users.id as count')
+      .first();
+
+    return {
+      loyaltyPrograms: parseInt(loyaltyProgramsCount.count),
+      walletPasses: parseInt(walletPassesCount.count),
+      users: parseInt(usersCount.count)
     };
   }
 }

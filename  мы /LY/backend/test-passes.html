@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LY Wallet Passes Tester</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }
+        .section { margin: 30px 0; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
+        .pass-card { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin: 10px 0;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .pass-header { display: flex; justify-content: space-between; align-items: center; }
+        .pass-points { font-size: 24px; font-weight: bold; }
+        .pass-name { font-size: 18px; margin: 10px 0; }
+        .pass-details { font-size: 14px; opacity: 0.9; }
+        .method { padding: 5px 10px; border-radius: 3px; color: white; font-weight: bold; }
+        .get { background: #28a745; }
+        .post { background: #007bff; }
+        .put { background: #ffc107; color: #000; }
+        .delete { background: #dc3545; }
+        button { padding: 10px 15px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; margin: 5px; }
+        button:hover { background: #0056b3; }
+        button.danger { background: #dc3545; }
+        button.danger:hover { background: #c82333; }
+        .result { margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 5px; max-height: 300px; overflow-y: auto; }
+        .error { background: #f8d7da; border: 1px solid #f5c6cb; }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; }
+        pre { white-space: pre-wrap; word-wrap: break-word; font-size: 12px; }
+        .status { font-weight: bold; margin-bottom: 10px; }
+        .form-group { margin: 10px 0; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; }
+        .form-group input, .form-group select, .form-group textarea { 
+            width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; 
+        }
+        .form-row { display: flex; gap: 10px; }
+        .form-row .form-group { flex: 1; }
+        .passes-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 LY Wallet Passes API Tester</h1>
+        <p>Полное тестирование системы Apple Wallet пассов с улучшенными связями</p>
+        
+        <!-- Существующие пассы -->
+        <div class="section">
+            <h2><span class="method get">GET</span> Просмотр существующих пассов</h2>
+            <button onclick="loadPasses()">Загрузить все пассы</button>
+            <button onclick="loadPassesByCompany()">Пассы Coffee House</button>
+            <button onclick="loadPassesByUser()">Пассы пользователя Иван</button>
+            <div id="passes-list" class="passes-grid"></div>
+        </div>
+        
+        <!-- Создание нового пасса -->
+        <div class="section">
+            <h2><span class="method post">POST</span> Создание нового пасса</h2>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Название организации</label>
+                    <input type="text" id="org-name" value="Новая кофейня" placeholder="Название компании">
+                </div>
+                <div class="form-group">
+                    <label>Тип пасса</label>
+                    <select id="pass-type">
+                        <option value="storeCard">Карта магазина</option>
+                        <option value="coupon">Купон</option>
+                        <option value="eventTicket">Билет на событие</option>
+                        <option value="generic">Общий</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Цвет фона</label>
+                    <input type="color" id="bg-color" value="#1976D2">
+                </div>
+                <div class="form-group">
+                    <label>Цвет текста</label>
+                    <input type="color" id="fg-color" value="#FFFFFF">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label>Описание</label>
+                <textarea id="description" placeholder="Описание пасса" rows="3">Карта лояльности для получения бонусов и скидок</textarea>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>ID компании (опционально)</label>
+                    <input type="text" id="company-id" placeholder="550e8400-e29b-41d4-a716-446655440001">
+                </div>
+                <div class="form-group">
+                    <label>ID программы лояльности (опционально)</label>
+                    <input type="text" id="loyalty-id" placeholder="550e8400-e29b-41d4-a716-446655440010">
+                </div>
+            </div>
+            
+            <button onclick="createPass()">Создать пасс</button>
+            <div id="create-result" class="result" style="display:none;"></div>
+        </div>
+        
+        <!-- Тестирование связей -->
+        <div class="section">
+            <h2><span class="method post">POST</span> Привязка пасса к пользователю</h2>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>ID пасса</label>
+                    <input type="text" id="assign-pass-id" placeholder="ID пасса для привязки">
+                </div>
+                <div class="form-group">
+                    <label>ID пользователя</label>
+                    <input type="text" id="assign-user-id" value="550e8400-e29b-41d4-a716-446655440020" placeholder="ID пользователя">
+                </div>
+            </div>
+            <button onclick="assignPassToUser()">Привязать пасс</button>
+            <div id="assign-result" class="result" style="display:none;"></div>
+        </div>
+        
+        <!-- Статистика -->
+        <div class="section">
+            <h2><span class="method get">GET</span> Статистика пассов</h2>
+            <button onclick="getPassStats()">Общая статистика</button>
+            <button onclick="getCompanyStats()">Статистика Coffee House</button>
+            <div id="stats-result" class="result" style="display:none;"></div>
+        </div>
+        
+        <!-- Операции с существующими пассами -->
+        <div class="section">
+            <h2>Операции с пассами</h2>
+            <div class="form-group">
+                <label>ID пасса для операций</label>
+                <input type="text" id="operation-pass-id" placeholder="Введите ID пасса">
+            </div>
+            <button onclick="viewPass()">Просмотреть</button>
+            <button onclick="downloadPass()">Скачать .pkpass</button>
+            <button onclick="deletePass()" class="danger">Удалить</button>
+            <div id="operation-result" class="result" style="display:none;"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3001';
+        
+        async function apiRequest(method, path, data = null) {
+            try {
+                const options = {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' }
+                };
+                
+                if (data) {
+                    options.body = JSON.stringify(data);
+                }
+                
+                const response = await fetch(API_BASE + path, options);
+                const result = await response.json();
+                
+                return {
+                    status: response.status,
+                    ok: response.ok,
+                    data: result
+                };
+            } catch (error) {
+                return {
+                    status: 0,
+                    ok: false,
+                    data: { error: error.message }
+                };
+            }
+        }
+        
+        function showResult(elementId, response) {
+            const div = document.getElementById(elementId);
+            div.style.display = 'block';
+            div.className = response.ok ? 'result success' : 'result error';
+            div.innerHTML = `
+                <div class="status">Status: ${response.status}</div>
+                <pre>${JSON.stringify(response.data, null, 2)}</pre>
+            `;
+        }
+        
+        function renderPass(pass) {
+            const fields = typeof pass.fields === 'string' ? JSON.parse(pass.fields) : pass.fields;
+            const headerField = fields?.headerFields?.[0];
+            const primaryField = fields?.primaryFields?.[0];
+            
+            return `
+                <div class="pass-card" style="background: linear-gradient(135deg, ${pass.background_color} 0%, ${pass.foreground_color}22 100%);">
+                    <div class="pass-header">
+                        <div>
+                            <h3 style="margin: 0; color: ${pass.foreground_color};">${pass.organization_name}</h3>
+                            <div class="pass-details">ID: ${pass.id}</div>
+                            <div class="pass-details">Тип: ${pass.pass_type}</div>
+                            ${pass.company_name ? `<div class="pass-details">Компания: ${pass.company_name}</div>` : ''}
+                        </div>
+                        <div class="pass-points" style="color: ${pass.foreground_color};">
+                            ${headerField ? headerField.value : ''}
+                            ${headerField ? `<div style="font-size: 12px;">${headerField.label}</div>` : ''}
+                        </div>
+                    </div>
+                    <div class="pass-name" style="color: ${pass.foreground_color};">
+                        ${primaryField ? `${primaryField.label}: ${primaryField.value}` : pass.description || ''}
+                    </div>
+                    <div class="pass-details">
+                        Серийный номер: ${pass.serial_number}
+                    </div>
+                </div>
+            `;
+        }
+        
+        async function loadPasses() {
+            const response = await apiRequest('GET', '/api/v1/passes');
+            if (response.ok && response.data.success) {
+                const passesHtml = response.data.data.map(pass => renderPass(pass)).join('');
+                document.getElementById('passes-list').innerHTML = passesHtml || '<p>Пассы не найдены</p>';
+            } else {
+                document.getElementById('passes-list').innerHTML = '<p class="error">Ошибка загрузки пассов</p>';
+            }
+        }
+        
+        async function loadPassesByCompany() {
+            const response = await apiRequest('GET', '/api/v1/passes?companyId=550e8400-e29b-41d4-a716-446655440001');
+            if (response.ok && response.data.success) {
+                const passesHtml = response.data.data.map(pass => renderPass(pass)).join('');
+                document.getElementById('passes-list').innerHTML = passesHtml || '<p>Пассы не найдены</p>';
+            }
+        }
+        
+        async function loadPassesByUser() {
+            const response = await apiRequest('GET', '/api/v1/passes?userId=550e8400-e29b-41d4-a716-446655440020');
+            if (response.ok && response.data.success) {
+                const passesHtml = response.data.data.map(pass => renderPass(pass)).join('');
+                document.getElementById('passes-list').innerHTML = passesHtml || '<p>Пассы не найдены</p>';
+            }
+        }
+        
+        async function createPass() {
+            const passData = {
+                organizationName: document.getElementById('org-name').value,
+                description: document.getElementById('description').value,
+                passType: document.getElementById('pass-type').value,
+                backgroundColor: document.getElementById('bg-color').value,
+                foregroundColor: document.getElementById('fg-color').value,
+                companyId: document.getElementById('company-id').value || null,
+                loyaltyProgramId: document.getElementById('loyalty-id').value || null,
+                fields: {
+                    headerFields: [{ key: 'points', label: 'Баллы', value: '0' }],
+                    primaryFields: [{ key: 'name', label: 'Владелец', value: 'Новый клиент' }],
+                    secondaryFields: [{ key: 'level', label: 'Уровень', value: 'Начальный' }]
+                },
+                barcodes: [{
+                    format: 'PKBarcodeFormatQR',
+                    message: `LY-${Date.now()}`,
+                    messageEncoding: 'iso-8859-1'
+                }]
+            };
+            
+            const response = await apiRequest('POST', '/api/v1/passes', passData);
+            showResult('create-result', response);
+            
+            if (response.ok) {
+                loadPasses(); // Перезагружаем список
+            }
+        }
+        
+        async function assignPassToUser() {
+            const passId = document.getElementById('assign-pass-id').value;
+            const userId = document.getElementById('assign-user-id').value;
+            
+            if (!passId || !userId) {
+                alert('Заполните оба поля');
+                return;
+            }
+            
+            const response = await apiRequest('POST', `/api/v1/passes/${passId}/assign`, { userId });
+            showResult('assign-result', response);
+        }
+        
+        async function getPassStats() {
+            const response = await apiRequest('GET', '/api/v1/passes/stats/overview');
+            showResult('stats-result', response);
+        }
+        
+        async function getCompanyStats() {
+            const response = await apiRequest('GET', '/api/v1/companies/550e8400-e29b-41d4-a716-446655440001/stats');
+            showResult('stats-result', response);
+        }
+        
+        async function viewPass() {
+            const passId = document.getElementById('operation-pass-id').value;
+            if (!passId) {
+                alert('Введите ID пасса');
+                return;
+            }
+            
+            const response = await apiRequest('GET', `/api/v1/passes/${passId}`);
+            showResult('operation-result', response);
+        }
+        
+        async function downloadPass() {
+            const passId = document.getElementById('operation-pass-id').value;
+            if (!passId) {
+                alert('Введите ID пасса');
+                return;
+            }
+            
+            const response = await apiRequest('GET', `/api/v1/passes/${passId}/download`);
+            showResult('operation-result', response);
+        }
+        
+        async function deletePass() {
+            const passId = document.getElementById('operation-pass-id').value;
+            if (!passId) {
+                alert('Введите ID пасса');
+                return;
+            }
+            
+            if (!confirm('Удалить этот пасс?')) return;
+            
+            const response = await apiRequest('DELETE', `/api/v1/passes/${passId}`);
+            showResult('operation-result', response);
+            
+            if (response.ok) {
+                loadPasses(); // Перезагружаем список
+            }
+        }
+        
+        // Автозагрузка при старте
+        window.onload = function() {
+            loadPasses();
+        };
+    </script>
+</body>
+</html>

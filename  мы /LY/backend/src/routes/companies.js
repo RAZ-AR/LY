@@ -25,7 +25,14 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const company = await Company.findWithLoyaltyPrograms(id);
+    const { includeDetails } = req.query;
+    
+    let company;
+    if (includeDetails === 'true') {
+      company = await Company.findWithLoyaltyPrograms(id);
+    } else {
+      company = await Company.findById(id);
+    }
     
     if (!company) {
       return res.status(404).json({
@@ -42,6 +49,32 @@ router.get('/:id', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch company',
+      message: error.message
+    });
+  }
+});
+
+// GET company stats
+router.get('/:id/stats', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const stats = await Company.getStats(id);
+    
+    if (!stats) {
+      return res.status(404).json({
+        success: false,
+        error: 'Company not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch company stats',
       message: error.message
     });
   }
